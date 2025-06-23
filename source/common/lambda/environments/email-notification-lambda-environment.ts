@@ -11,8 +11,6 @@ export const EmailNotificationEnvironmentSchema =
     APP_CONFIG_PROFILE_ID: z.string(),
     APP_CONFIG_ENVIRONMENT_ID: z.string(),
     ISB_NAMESPACE: z.string(),
-    IDENTITY_STORE_ID: z.string(),
-    SSO_INSTANCE_ARN: z.string(),
     INTERMEDIATE_ROLE_ARN: z.string(),
     IDC_ROLE_ARN: z.string(),
     AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: z.string(),

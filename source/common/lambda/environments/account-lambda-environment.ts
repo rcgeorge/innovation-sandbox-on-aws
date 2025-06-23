@@ -12,8 +12,6 @@ export const AccountLambdaEnvironmentSchema =
     AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: z.string(),
     ACCOUNT_TABLE_NAME: z.string(),
     ISB_NAMESPACE: z.string(),
-    IDENTITY_STORE_ID: z.string(),
-    SSO_INSTANCE_ARN: z.string(),
     LEASE_TABLE_NAME: z.string(),
     ISB_EVENT_BUS: z.string(),
     SANDBOX_OU_ID: z.string(),

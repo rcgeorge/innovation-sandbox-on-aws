@@ -62,6 +62,12 @@ export function getSharedSsmParamValues(
     idc: {
       identityStoreId: sharedJsonParamResolver.identityStoreId,
       ssoInstanceArn: sharedJsonParamResolver.ssoInstanceArn,
+      adminGroupId: sharedJsonParamResolver.adminGroupId,
+      managerGroupId: sharedJsonParamResolver.managerGroupId,
+      userGroupId: sharedJsonParamResolver.userGroupId,
+      adminPermissionSetArn: sharedJsonParamResolver.adminPermissionSetArn,
+      managerPermissionSetArn: sharedJsonParamResolver.managerPermissionSetArn,
+      userPermissionSetArn: sharedJsonParamResolver.userPermissionSetArn,
       solutionVersion: sharedJsonParamResolver.idcSolutionVersion,
       supportedSchemas: sharedJsonParamResolver.idcSupportedSchemas,
     },

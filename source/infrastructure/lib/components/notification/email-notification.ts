@@ -3,6 +3,7 @@
 
 import { SubscribedEmailEvents } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-events";
 import { EmailNotificationEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/email-notification-lambda-environment.js";
+import { sharedIdcSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { EventsToLambda } from "@amzn/innovation-sandbox-infrastructure/components/events-to-lambda";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
@@ -11,7 +12,10 @@ import {
   getIdcRoleArn,
   IntermediateRole,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
-import { grantIsbAppConfigRead } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
+import {
+  grantIsbAppConfigRead,
+  grantIsbSsmParameterRead,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 import { Duration } from "aws-cdk-lib";
@@ -65,16 +69,18 @@ export class EmailNotificationLambda extends Construct {
         INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
         IDC_ROLE_ARN: getIdcRoleArn(scope, props.namespace, props.idcAccountId),
         ISB_NAMESPACE: props.namespace,
-        IDENTITY_STORE_ID:
-          IsbComputeStack.sharedSpokeConfig.idc.identityStoreId,
-        SSO_INSTANCE_ARN: IsbComputeStack.sharedSpokeConfig.idc.ssoInstanceArn,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: EmailNotificationEnvironmentSchema,
       timeout: Duration.minutes(3),
     });
-    IntermediateRole.addTrustedRole(lambda.lambdaFunction.role! as Role);
 
+    IntermediateRole.addTrustedRole(lambda.lambdaFunction.role! as Role);
+    grantIsbSsmParameterRead(
+      lambda.lambdaFunction.role! as Role,
+      sharedIdcSsmParamName(props.namespace),
+      props.idcAccountId,
+    );
     grantIsbAppConfigRead(scope, lambda, globalConfigConfigurationProfileId);
     addAppConfigExtensionLayer(lambda);
 

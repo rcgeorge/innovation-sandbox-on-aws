@@ -12,8 +12,6 @@ export const LeaseLambdaEnvironmentSchema = BaseLambdaEnvironmentSchema.extend({
   LEASE_TABLE_NAME: z.string(),
   LEASE_TEMPLATE_TABLE_NAME: z.string(),
   SANDBOX_OU_ID: z.string(),
-  IDENTITY_STORE_ID: z.string(),
-  SSO_INSTANCE_ARN: z.string(),
   INTERMEDIATE_ROLE_ARN: z.string(),
   IDC_ROLE_ARN: z.string(),
   ORG_MGT_ROLE_ARN: z.string(),

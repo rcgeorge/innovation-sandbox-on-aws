@@ -1,22 +1,35 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { ArnFormat, Fn, Stack } from "aws-cdk-lib";
+import { ArnFormat, Duration, Fn, Stack } from "aws-cdk-lib";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import path from "path";
 
 import { IdcConfigurerLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/idc-configurer-lambda-environment.js";
 import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function-custom-resource";
-import { IsbIdcResourcesProps } from "@amzn/innovation-sandbox-infrastructure/isb-idc-resources";
+
+export type IdcConfigurerProps = {
+  namespace: string;
+  identityStoreId: string;
+  ssoInstanceArn: string;
+  adminGroupName: string;
+  managerGroupName: string;
+  userGroupName: string;
+};
 
 export class IdcConfigurer extends Construct {
-  constructor(scope: Construct, id: string, props: IsbIdcResourcesProps) {
+  public readonly adminGroupId: string;
+  public readonly managerGroupId: string;
+  public readonly userGroupId: string;
+  public readonly adminPermissionSetArn: string;
+  public readonly managerPermissionSetArn: string;
+  public readonly userPermissionSetArn: string;
+
+  constructor(scope: Construct, id: string, props: IdcConfigurerProps) {
     super(scope, id);
 
-    const idcCustomResource = new IsbLambdaFunctionCustomResource(
-      this,
-      "IdcConfigurerLambdaFunction",
-      {
+    const { customResource, lambdaFunction } =
+      new IsbLambdaFunctionCustomResource(this, "IdcConfigurerLambdaFunction", {
         description: "Custom resource lambda that configures the IDC instance",
         entry: path.join(
           __dirname,
@@ -32,15 +45,33 @@ export class IdcConfigurer extends Construct {
         ),
         handler: "handler",
         namespace: props.namespace,
+        customResourceType: "Custom::IdcConfigurer",
+        envSchema: IdcConfigurerLambdaEnvironmentSchema,
         environment: {
           POWERTOOLS_SERVICE_NAME: "IdcConfigurer",
-          IDENTITY_STORE_ID: props.identityStoreId,
-          SSO_INSTANCE_ARN: props.ssoInstanceArn,
-          ISB_NAMESPACE: props.namespace,
         },
-        envSchema: IdcConfigurerLambdaEnvironmentSchema,
-        customResourceType: "Custom::IdcConfigurer",
-      },
+        timeout: Duration.minutes(15),
+        customResourceProperties: {
+          namespace: props.namespace,
+          identityStoreId: props.identityStoreId,
+          ssoInstanceArn: props.ssoInstanceArn,
+          adminGroupName: props.adminGroupName,
+          managerGroupName: props.managerGroupName,
+          userGroupName: props.userGroupName,
+        },
+      });
+
+    this.adminGroupId = customResource.getAttString("adminGroupId");
+    this.managerGroupId = customResource.getAttString("managerGroupId");
+    this.userGroupId = customResource.getAttString("userGroupId");
+    this.adminPermissionSetArn = customResource.getAttString(
+      "adminPermissionSetArn",
+    );
+    this.managerPermissionSetArn = customResource.getAttString(
+      "managerPermissionSetArn",
+    );
+    this.userPermissionSetArn = customResource.getAttString(
+      "userPermissionSetArn",
     );
 
     const identityStoreArn = Stack.of(scope).formatArn({
@@ -51,16 +82,16 @@ export class IdcConfigurer extends Construct {
       resourceName: props.identityStoreId,
     });
 
-    idcCustomResource.lambdaFunction.addToRolePolicy(
+    lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         actions: ["identitystore:CreateGroup"],
         resources: [identityStoreArn],
       }),
     );
 
-    idcCustomResource.lambdaFunction.addToRolePolicy(
+    lambdaFunction.addToRolePolicy(
       new PolicyStatement({
-        actions: ["identitystore:ListGroups"],
+        actions: ["identitystore:GetGroupId"],
         resources: [
           identityStoreArn,
           Stack.of(scope).formatArn({
@@ -77,7 +108,7 @@ export class IdcConfigurer extends Construct {
 
     const instanceId = Fn.select(1, Fn.split("/", props.ssoInstanceArn));
 
-    idcCustomResource.lambdaFunction.addToRolePolicy(
+    lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         actions: ["sso:ListPermissionSets", "sso:DescribePermissionSet"],
         resources: [
@@ -94,7 +125,7 @@ export class IdcConfigurer extends Construct {
       }),
     );
 
-    idcCustomResource.lambdaFunction.addToRolePolicy(
+    lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         actions: [
           "sso:CreatePermissionSet",

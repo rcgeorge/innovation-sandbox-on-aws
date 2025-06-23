@@ -1,36 +1,25 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import {
-  CreateGroupCommand,
-  DeleteGroupCommand,
   DescribeUserCommand,
   GetUserIdCommand,
-  Group,
   IdentitystoreClient,
   IdentitystorePaginationConfiguration,
   ListGroupMembershipsCommand,
   ListGroupMembershipsForMemberCommandInput,
-  ListGroupsCommandInput,
   User,
   paginateListGroupMembershipsForMember,
-  paginateListGroups,
 } from "@aws-sdk/client-identitystore";
+import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 import {
-  AttachManagedPolicyToPermissionSetCommand,
   CreateAccountAssignmentCommand,
-  CreatePermissionSetCommand,
   DeleteAccountAssignmentCommand,
-  DeletePermissionSetCommand,
-  DescribePermissionSetCommand,
   ListAccountAssignmentsCommandInput,
-  ListPermissionSetsCommandInput,
-  PermissionSet,
   PrincipalType,
   SSOAdminClient,
   SSOAdminPaginationConfiguration,
   TargetType,
   paginateListAccountAssignments,
-  paginateListPermissionSets,
 } from "@aws-sdk/client-sso-admin";
 
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
@@ -45,19 +34,11 @@ import {
 import {
   IsbRole,
   IsbUser,
+  sharedIdcSsmParamName,
 } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
+import { IdcConfig } from "@amzn/innovation-sandbox-shared-json-param-parser/src/shared-json-param-parser-handler.js";
 import pThrottle from "p-throttle";
-
-export type IsbGroupAttrs = Record<
-  IsbRole,
-  {
-    name: string;
-    description: string;
-  }
->;
-
-export type IsbPermissionSetAttrs = IsbGroupAttrs;
 
 // IDC supports 20 TPS for all requests
 // (https://docs.aws.amazon.com/singlesignon/latest/userguide/limits.html)
@@ -66,233 +47,38 @@ const throttle1PerSec = pThrottle({
   interval: 1000,
 });
 
-const ISB_USER_PS_NAME = "IsbUsersPS";
-const ISB_MANAGER_PS_NAME = "IsbManagersPS";
-const ISB_ADMIN_PS_NAME = "IsbAdminsPS";
-
 export class IdcService {
   readonly namespace;
   readonly identityStoreClient;
   readonly ssoAdminClient;
-  readonly identityStoreId;
-  readonly ssoInstanceArn;
+  readonly ssmClient;
+  private idcConfig?: IdcConfig;
   public static defaultPageSize = 50;
-
-  private readonly defaultIsbGroupAttrs: IsbGroupAttrs;
-
-  private readonly defaultIsbPermissionSetAttrs: IsbPermissionSetAttrs;
-
-  private readonly maxGroupNameLength = 128;
-  private readonly maxPermissionSetNameLength = 32;
 
   constructor(props: {
     namespace: string;
-    identityStoreId: string;
-    ssoInstanceArn: string;
     identityStoreClient: IdentitystoreClient;
     ssoAdminClient: SSOAdminClient;
+    ssmClient: SSMClient;
   }) {
     this.namespace = props.namespace;
     this.identityStoreClient = props.identityStoreClient;
     this.ssoAdminClient = props.ssoAdminClient;
-    this.identityStoreId = props.identityStoreId;
-    this.ssoInstanceArn = props.ssoInstanceArn;
-    this.defaultIsbGroupAttrs = {
-      User: {
-        name: `${this.namespace}_IsbUsersGroup`.slice(
-          0,
-          this.maxGroupNameLength,
-        ),
-        description: "Innovation Sandbox Users",
-      },
-      Manager: {
-        name: `${this.namespace}_IsbManagersGroup`.slice(
-          0,
-          this.maxGroupNameLength,
-        ),
-        description: "Innovation Sandbox Managers",
-      },
-      Admin: {
-        name: `${this.namespace}_IsbAdminsGroup`.slice(
-          0,
-          this.maxGroupNameLength,
-        ),
-        description: "Innovation Sandbox Administrators",
-      },
-    };
-    this.defaultIsbPermissionSetAttrs = {
-      User: {
-        name: `${this.namespace}_${ISB_USER_PS_NAME}`.slice(
-          0,
-          this.maxPermissionSetNameLength,
-        ),
-        description: "ISB Users Permission Set",
-      },
-      Manager: {
-        name: `${this.namespace}_${ISB_MANAGER_PS_NAME}`.slice(
-          0,
-          this.maxPermissionSetNameLength,
-        ),
-        description: "ISB Managers Permission Set",
-      },
-      Admin: {
-        name: `${this.namespace}_${ISB_ADMIN_PS_NAME}`.slice(
-          0,
-          this.maxPermissionSetNameLength,
-        ),
-        description: "ISB Administrators Permission Set",
-      },
-    };
+    this.ssmClient = props.ssmClient;
   }
 
-  private async listGroups(): Promise<Group[]> {
-    const input: ListGroupsCommandInput = {
-      IdentityStoreId: this.identityStoreId,
-    };
-    const paginatorConfig: IdentitystorePaginationConfiguration = {
-      client: this.identityStoreClient,
-    };
-    const paginator = paginateListGroups(paginatorConfig, input);
-    const allGroups: Group[] = [];
-    for await (const page of paginator) {
-      if (page.Groups) {
-        allGroups.push(...page.Groups);
+  private async getIdcConfig(): Promise<IdcConfig> {
+    if (!this.idcConfig) {
+      const command = new GetParameterCommand({
+        Name: sharedIdcSsmParamName(this.namespace),
+      });
+      const response = await this.ssmClient.send(command);
+      if (!response.Parameter?.Value) {
+        throw new Error("IDC configuration not found in SSM parameter store");
       }
+      this.idcConfig = JSON.parse(response.Parameter.Value) as IdcConfig;
     }
-    return allGroups;
-  }
-
-  public async listIsbGroups(): Promise<Group[]> {
-    const expectedGroupNames = Object.values(this.defaultIsbGroupAttrs).map(
-      (group) => group.name,
-    );
-    return (await this.listGroups()).filter(
-      (group) =>
-        group.DisplayName && expectedGroupNames.includes(group.DisplayName),
-    );
-  }
-
-  async createIsbGroups() {
-    const existingIsbGroupNames = (await this.listIsbGroups()).map(
-      (group) => group.DisplayName,
-    );
-    const groupsToCreate = Object.values(this.defaultIsbGroupAttrs).filter(
-      (group) => !existingIsbGroupNames?.includes(group.name),
-    );
-
-    for (const group of groupsToCreate) {
-      const createGroupCommand = new CreateGroupCommand({
-        IdentityStoreId: this.identityStoreId,
-        DisplayName: group.name,
-        Description: group.description,
-      });
-      await this.identityStoreClient.send(createGroupCommand);
-    }
-  }
-
-  async deleteIsbGroups() {
-    const isbGroups = await this.listIsbGroups();
-    for (const group of isbGroups) {
-      const deleteGroupCommand = new DeleteGroupCommand({
-        IdentityStoreId: this.identityStoreId,
-        GroupId: group.GroupId,
-      });
-      await this.identityStoreClient.send(deleteGroupCommand);
-    }
-  }
-
-  /**
-   * requires
-   *  "sso:ListPermissionSets",
-   *  "sso:DescribePermissionSet",
-   */
-  private async listPermissionSets(): Promise<PermissionSet[]> {
-    const input: ListPermissionSetsCommandInput = {
-      InstanceArn: this.ssoInstanceArn,
-    };
-    const paginatorConfig: SSOAdminPaginationConfiguration = {
-      client: this.ssoAdminClient,
-    };
-    const paginator = paginateListPermissionSets(paginatorConfig, input);
-    const allPermissionSets: PermissionSet[] = [];
-    const throttledDescribePS = throttle1PerSec(
-      async (describePSCommand: DescribePermissionSetCommand) => {
-        return this.ssoAdminClient.send(describePSCommand);
-      },
-    );
-    for await (const page of paginator) {
-      if (page.PermissionSets) {
-        for (const psArn of page.PermissionSets) {
-          const describePSCommand = new DescribePermissionSetCommand({
-            InstanceArn: this.ssoInstanceArn,
-            PermissionSetArn: psArn,
-          });
-          const currPermissionSet =
-            await throttledDescribePS(describePSCommand);
-          if (currPermissionSet.PermissionSet) {
-            allPermissionSets.push(currPermissionSet.PermissionSet);
-          }
-        }
-      }
-    }
-    return allPermissionSets;
-  }
-
-  async listIsbPermissionSets(): Promise<PermissionSet[]> {
-    const expectedPSNames = Object.values(
-      this.defaultIsbPermissionSetAttrs,
-    ).map((ps) => ps.name);
-    return (await this.listPermissionSets()).filter(
-      (ps) => ps.Name && expectedPSNames.includes(ps.Name),
-    );
-  }
-
-  /**
-   * requires
-   *  "sso:CreatePermissionSet",
-   *  "sso:AttachManagedPolicyToPermissionSet",
-   */
-  async createIsbPermissionSets() {
-    const existingPSNames = (await this.listIsbPermissionSets()).map(
-      (ps) => ps.Name,
-    );
-    const psToCreate = Object.values(this.defaultIsbPermissionSetAttrs).filter(
-      (ps) => !existingPSNames?.includes(ps.name),
-    );
-    for (const ps of psToCreate) {
-      const createPSCommand = new CreatePermissionSetCommand({
-        InstanceArn: this.ssoInstanceArn,
-        Name: ps.name,
-        Description: ps.description,
-      });
-      const response = await this.ssoAdminClient.send(createPSCommand);
-      if (response.PermissionSet) {
-        const attachPolicyCommand =
-          new AttachManagedPolicyToPermissionSetCommand({
-            InstanceArn: this.ssoInstanceArn,
-            PermissionSetArn: response.PermissionSet.PermissionSetArn,
-            ManagedPolicyArn: "arn:aws:iam::aws:policy/AdministratorAccess",
-          });
-        await this.ssoAdminClient.send(attachPolicyCommand);
-      } else {
-        throw new Error("Failed to create permission sets.");
-      }
-    }
-  }
-
-  /**
-   * requires
-   *   "sso:DeletePermissionSet",
-   */
-  async deleteIsbPermissionSets() {
-    const isbPermissionSets = await this.listIsbPermissionSets();
-    for (const ps of isbPermissionSets) {
-      const deletePSCommand = new DeletePermissionSetCommand({
-        InstanceArn: this.ssoInstanceArn,
-        PermissionSetArn: ps.PermissionSetArn,
-      });
-      await this.ssoAdminClient.send(deletePSCommand);
-    }
+    return this.idcConfig;
   }
 
   private isbUserFromIdcUser(user: User, roles?: IsbRole[]): IsbUser {
@@ -322,12 +108,10 @@ export class IdcService {
     if (cachedUsers) {
       return cachedUsers;
     }
-    const userGroupId = (await this.listGroups()).filter(
-      (group) => group.DisplayName === this.defaultIsbGroupAttrs["User"].name,
-    )[0]!.GroupId;
+    const config = await this.getIdcConfig();
     const users = await this.listGroupMembers({
       ...props,
-      groupId: userGroupId!,
+      groupId: config.userGroupId,
     });
     cacheUsers(props.pageIdentifier ?? "FIRST_PAGE", users);
     return users;
@@ -350,13 +134,10 @@ export class IdcService {
     if (cachedManagers) {
       return cachedManagers;
     }
-    const managerGroupId = (await this.listGroups()).filter(
-      (group) =>
-        group.DisplayName === this.defaultIsbGroupAttrs["Manager"].name,
-    )[0]!.GroupId;
+    const config = await this.getIdcConfig();
     const managers = await this.listGroupMembers({
       ...props,
-      groupId: managerGroupId!,
+      groupId: config.managerGroupId,
     });
     cacheManagers(props.pageIdentifier ?? "FIRST_PAGE", managers);
     return managers;
@@ -377,25 +158,24 @@ export class IdcService {
     if (cachedAdmins) {
       return cachedAdmins;
     }
-    const adminGroupId = (await this.listGroups()).filter(
-      (group) => group.DisplayName === this.defaultIsbGroupAttrs["Admin"].name,
-    )[0]!.GroupId;
+    const config = await this.getIdcConfig();
     const admins = await this.listGroupMembers({
       ...props,
-      groupId: adminGroupId!,
+      groupId: config.adminGroupId,
     });
     cacheAdmins(props.pageIdentifier ?? "FIRST_PAGE", admins);
     return admins;
   }
 
-  async listGroupMembers(props: {
+  private async listGroupMembers(props: {
     groupId: string;
     pageSize?: number;
     pageIdentifier?: string;
   }): Promise<PaginatedQueryResult<IsbUser>> {
+    const config = await this.getIdcConfig();
     const command = new ListGroupMembershipsCommand({
       GroupId: props.groupId,
-      IdentityStoreId: this.identityStoreId,
+      IdentityStoreId: config.identityStoreId,
       MaxResults: props.pageSize,
       NextToken: props.pageIdentifier,
     });
@@ -410,7 +190,7 @@ export class IdcService {
     if (response.GroupMemberships) {
       for (const membership of response.GroupMemberships) {
         const descUserCommand = new DescribeUserCommand({
-          IdentityStoreId: this.identityStoreId,
+          IdentityStoreId: config.identityStoreId,
           UserId: membership.MemberId?.UserId,
         });
         const user = await throttledDescribeUser(descUserCommand);
@@ -437,7 +217,6 @@ export class IdcService {
    * requires actions
    *  "identitystore:GetUserId",
    *  "identitystore:DescribeUser",
-   *  "identitystore:ListGroups",
    *  "identitystore:ListGroupMembershipsForMember"
    */
   public async getUserFromUsername(
@@ -450,8 +229,9 @@ export class IdcService {
     attr: "emails.value" | "userName",
     value: string,
   ): Promise<IsbUser | undefined> {
+    const config = await this.getIdcConfig();
     const command = new GetUserIdCommand({
-      IdentityStoreId: this.identityStoreId,
+      IdentityStoreId: config.identityStoreId,
       AlternateIdentifier: {
         UniqueAttribute: {
           AttributePath: attr,
@@ -461,13 +241,12 @@ export class IdcService {
     });
     const { UserId: userId } = await this.identityStoreClient.send(command);
     const descUserCommand = new DescribeUserCommand({
-      IdentityStoreId: this.identityStoreId,
+      IdentityStoreId: config.identityStoreId,
       UserId: userId,
     });
     const user = await this.identityStoreClient.send(descUserCommand);
-    const isbGroups = await this.listIsbGroups();
     const input: ListGroupMembershipsForMemberCommandInput = {
-      IdentityStoreId: this.identityStoreId,
+      IdentityStoreId: config.identityStoreId,
       MemberId: {
         UserId: userId!,
       },
@@ -479,21 +258,19 @@ export class IdcService {
       paginatorConfig,
       input,
     );
-    const roles: IsbRole[] = [];
-    const groupToRoleMap: Record<string, IsbRole> = {
-      [this.defaultIsbGroupAttrs["User"].name]: "User",
-      [this.defaultIsbGroupAttrs["Manager"].name]: "Manager",
-      [this.defaultIsbGroupAttrs["Admin"].name]: "Admin",
+    const groupIdToRole: Record<string, IsbRole> = {
+      [config.userGroupId]: "User",
+      [config.managerGroupId]: "Manager",
+      [config.adminGroupId]: "Admin",
     };
+    const roles: IsbRole[] = [];
     for await (const page of paginator) {
       if (page.GroupMemberships) {
         for (const groupMembership of page.GroupMemberships) {
-          const currGroups = isbGroups.filter(
-            (group) => groupMembership.GroupId === group.GroupId,
-          );
-          roles.push(
-            ...currGroups.map((group) => groupToRoleMap[group.DisplayName!]!),
-          );
+          const role = groupIdToRole[groupMembership.GroupId!];
+          if (role) {
+            roles.push(role);
+          }
         }
       }
     }
@@ -504,18 +281,11 @@ export class IdcService {
     return this.isbUserFromIdcUser(user, roles);
   }
 
-  /**
-   * requires actions
-   *  "sso:CreateAccountAssignment",
-   *  "sso:ListPermissionSets",
-   *  "sso:DescribePermissionSet
-   */
   private async grantUserAccess(accountId: string, isbUser: IsbUser) {
-    const userPS = (await this.listIsbPermissionSets()).find((ps) =>
-      ps.Name?.includes(ISB_USER_PS_NAME),
-    )!;
+    const config = await this.getIdcConfig();
+    const userPS = { PermissionSetArn: config.userPermissionSetArn };
     const command = new CreateAccountAssignmentCommand({
-      InstanceArn: this.ssoInstanceArn,
+      InstanceArn: config.ssoInstanceArn,
       PermissionSetArn: userPS.PermissionSetArn,
       PrincipalId: isbUser.userId,
       PrincipalType: "USER",
@@ -525,6 +295,29 @@ export class IdcService {
     await this.ssoAdminClient.send(command);
   }
 
+  /**
+   * requires actions
+   *  "sso:DeleteAccountAssignment",
+   */
+  private async revokeUserAccess(accountId: string, isbUser: IsbUser) {
+    const config = await this.getIdcConfig();
+    const userPS = { PermissionSetArn: config.userPermissionSetArn };
+    const command = new DeleteAccountAssignmentCommand({
+      InstanceArn: config.ssoInstanceArn,
+      PermissionSetArn: userPS.PermissionSetArn,
+      PrincipalId: isbUser.userId,
+      PrincipalType: "USER",
+      TargetId: accountId,
+      TargetType: TargetType.AWS_ACCOUNT,
+    });
+    await this.ssoAdminClient.send(command);
+  }
+
+  /**
+   * requires actions
+   *  "sso:CreateAccountAssignment",
+   *  "sso:DeleteAccountAssignment",
+   */
   public transactionalGrantUserAccess(accountId: string, isbUser: IsbUser) {
     return new Transaction({
       beginTransaction: () => this.grantUserAccess(accountId, isbUser),
@@ -533,40 +326,16 @@ export class IdcService {
   }
 
   /**
-   * requires actions
-   *  "sso:DeleteAccountAssignment",
-   *  "sso:ListPermissionSets",
-   *  "sso:DescribePermissionSet
-   */
-  public async revokeUserAccess(accountId: string, isbUser: IsbUser) {
-    const userPS = (await this.listIsbPermissionSets()).find((ps) =>
-      ps.Name?.includes(ISB_USER_PS_NAME),
-    )!;
-    const command = new DeleteAccountAssignmentCommand({
-      InstanceArn: this.ssoInstanceArn,
-      PermissionSetArn: userPS.PermissionSetArn,
-      PrincipalId: isbUser.userId,
-      PrincipalType: "USER",
-      TargetId: accountId,
-      TargetType: TargetType.AWS_ACCOUNT,
-    });
-    await this.ssoAdminClient.send(command);
-  }
-
-  /**
    * removes access to all users which have the user Permission Set
    * requires actions
-   *  sso:ListPermissionSets,
-   *  sso:DescribePermissionSet,
    *  sso:ListAccountAssignments,
    *  sso:DeleteAccountAssignment,
    */
   public async revokeAllUserAccess(accountId: string) {
-    const userPS = (await this.listIsbPermissionSets()).find((ps) =>
-      ps.Name?.includes(ISB_USER_PS_NAME),
-    )!;
+    const config = await this.getIdcConfig();
+    const userPS = { PermissionSetArn: config.userPermissionSetArn };
     const input: ListAccountAssignmentsCommandInput = {
-      InstanceArn: this.ssoInstanceArn,
+      InstanceArn: config.ssoInstanceArn,
       AccountId: accountId,
       PermissionSetArn: userPS.PermissionSetArn,
     };
@@ -586,7 +355,7 @@ export class IdcService {
             continue;
           }
           const command = new DeleteAccountAssignmentCommand({
-            InstanceArn: this.ssoInstanceArn,
+            InstanceArn: config.ssoInstanceArn,
             PermissionSetArn: userPS.PermissionSetArn,
             PrincipalId: accountAssignment.PrincipalId,
             PrincipalType: accountAssignment.PrincipalType,
@@ -600,40 +369,36 @@ export class IdcService {
   }
 
   private async getCorrespondingPSAndGroup(
-    role: Omit<string, "User">,
+    role: Exclude<IsbRole, "User">,
   ): Promise<{
-    permissionSet: PermissionSet;
-    isbGroup: Group;
+    permissionSetArn: string;
+    groupId: string;
   }> {
-    const isbPermissionSets = await this.listIsbPermissionSets();
-    const permissionSet = isbPermissionSets.find(
-      (ps) =>
-        ps.Name === this.defaultIsbPermissionSetAttrs[role as IsbRole].name,
-    )!;
-    const isbGroups = await this.listIsbGroups();
-    const isbGroup = isbGroups.find(
-      (group) =>
-        group.DisplayName === this.defaultIsbGroupAttrs[role as IsbRole].name,
-    )!;
-    return { permissionSet, isbGroup };
+    const config = await this.getIdcConfig();
+    return {
+      permissionSetArn:
+        role === "Admin"
+          ? config.adminPermissionSetArn
+          : config.managerPermissionSetArn,
+      groupId: role === "Admin" ? config.adminGroupId : config.managerGroupId,
+    };
   }
 
   /**
    * requires actions
    *  "sso:CreateAccountAssignment",
-   *  "sso:ListPermissionSets",
-   *  "sso:DescribePermissionSet
    */
   public async assignGroupAccess(
     accountId: string,
-    role: Omit<IsbRole, "User">,
+    role: Exclude<IsbRole, "User">,
   ) {
-    const { permissionSet, isbGroup } =
+    const config = await this.getIdcConfig();
+    const { groupId, permissionSetArn } =
       await this.getCorrespondingPSAndGroup(role);
     const command = new CreateAccountAssignmentCommand({
-      InstanceArn: this.ssoInstanceArn,
-      PermissionSetArn: permissionSet.PermissionSetArn,
-      PrincipalId: isbGroup.GroupId,
+      InstanceArn: config.ssoInstanceArn,
+      PermissionSetArn: permissionSetArn,
+      PrincipalId: groupId,
       PrincipalType: "GROUP",
       TargetId: accountId,
       TargetType: TargetType.AWS_ACCOUNT,
@@ -644,19 +409,18 @@ export class IdcService {
   /**
    * requires actions
    *  "sso:DeleteAccountAssignment",
-   *  "sso:ListPermissionSets",
-   *  "sso:DescribePermissionSet
    */
   public async revokeGroupAccess(
     accountId: string,
-    role: Omit<IsbRole, "User">,
+    role: Exclude<IsbRole, "User">,
   ) {
-    const { permissionSet, isbGroup } =
+    const config = await this.getIdcConfig();
+    const { groupId, permissionSetArn } =
       await this.getCorrespondingPSAndGroup(role);
     const command = new DeleteAccountAssignmentCommand({
-      InstanceArn: this.ssoInstanceArn,
-      PermissionSetArn: permissionSet.PermissionSetArn,
-      PrincipalId: isbGroup.GroupId,
+      InstanceArn: config.ssoInstanceArn,
+      PermissionSetArn: permissionSetArn,
+      PrincipalId: groupId,
       PrincipalType: "GROUP",
       TargetId: accountId,
       TargetType: TargetType.AWS_ACCOUNT,
@@ -664,9 +428,14 @@ export class IdcService {
     await this.ssoAdminClient.send(command);
   }
 
+  /**
+   * requires actions
+   *  "sso:CreateAccountAssignment",
+   *  "sso:DeleteAccountAssignment"
+   */
   public transactionalAssignGroupAccess(
     accountId: string,
-    role: Omit<IsbRole, "User">,
+    role: Exclude<IsbRole, "User">,
   ) {
     return new Transaction({
       beginTransaction: () => this.assignGroupAccess(accountId, role),
@@ -674,9 +443,14 @@ export class IdcService {
     });
   }
 
+  /**
+   * requires actions
+   *  "sso:CreateAccountAssignment",
+   *  "sso:DeleteAccountAssignment"
+   */
   public transactionalRevokeGroupAccess(
     accountId: string,
-    role: Omit<IsbRole, "User">,
+    role: Exclude<IsbRole, "User">,
   ) {
     return new Transaction({
       beginTransaction: () => this.revokeGroupAccess(accountId, role),

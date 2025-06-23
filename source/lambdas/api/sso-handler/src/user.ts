@@ -13,8 +13,6 @@ export class User {
     const idcService = IsbServices.idcService(
       {
         ISB_NAMESPACE: process.env.ISB_NAMESPACE!,
-        IDENTITY_STORE_ID: process.env.IDENTITY_STORE_ID!,
-        SSO_INSTANCE_ARN: process.env.SSO_INSTANCE_ARN!,
         USER_AGENT_EXTRA: process.env.USER_AGENT_EXTRA!,
       },
       fromTemporaryIsbIdcCredentials({

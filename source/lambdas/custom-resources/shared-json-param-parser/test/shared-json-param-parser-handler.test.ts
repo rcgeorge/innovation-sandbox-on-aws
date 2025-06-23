@@ -29,6 +29,15 @@ describe("lambda handler", () => {
   //Idc
   const testIdentityStoreId = "d-0000000000";
   const testSsoInstanceArn = "arn:aws:sso:::instance/ssoins-123";
+  const testAdminGroupId = "admin-group";
+  const testManagerGroupId = "manager-group";
+  const testUserGroupId = "user-group";
+  const testAdminPermissionSetArn =
+    "arn:aws:sso:::permissionSet/ssoins-123/ps-0000000000";
+  const testManagerPermissionSetArn =
+    "arn:aws:sso:::permissionSet/ssoins-123/ps-1111111111";
+  const testUserPermissionSetArn =
+    "arn:aws:sso:::permissionSet/ssoins-123/ps-2222222222";
   const testIdcSolutionVersion = "v1.0.0";
   const testIdcSupportedSchemas = ["1"];
   //AccountPool
@@ -68,6 +77,12 @@ describe("lambda handler", () => {
   const idcConfigValue = JSON.stringify({
     identityStoreId: testIdentityStoreId,
     ssoInstanceArn: testSsoInstanceArn,
+    adminGroupId: testAdminGroupId,
+    managerGroupId: testManagerGroupId,
+    userGroupId: testUserGroupId,
+    adminPermissionSetArn: testAdminPermissionSetArn,
+    managerPermissionSetArn: testManagerPermissionSetArn,
+    userPermissionSetArn: testUserPermissionSetArn,
     solutionVersion: testIdcSolutionVersion,
     supportedSchemas: JSON.stringify(testIdcSupportedSchemas),
   });
@@ -103,6 +118,12 @@ describe("lambda handler", () => {
     //Idc
     identityStoreId: testIdentityStoreId,
     ssoInstanceArn: testSsoInstanceArn,
+    adminGroupId: testAdminGroupId,
+    managerGroupId: testManagerGroupId,
+    userGroupId: testUserGroupId,
+    adminPermissionSetArn: testAdminPermissionSetArn,
+    managerPermissionSetArn: testManagerPermissionSetArn,
+    userPermissionSetArn: testUserPermissionSetArn,
     idcSolutionVersion: testIdcSolutionVersion,
     idcSupportedSchemas: JSON.stringify(testIdcSupportedSchemas),
     //AccountPool

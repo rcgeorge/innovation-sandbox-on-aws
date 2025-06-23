@@ -4,12 +4,7 @@ import { z } from "zod";
 
 import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
 
-export const IdcConfigurerLambdaEnvironmentSchema =
-  BaseLambdaEnvironmentSchema.extend({
-    ISB_NAMESPACE: z.string(),
-    IDENTITY_STORE_ID: z.string(),
-    SSO_INSTANCE_ARN: z.string(),
-  });
+export const IdcConfigurerLambdaEnvironmentSchema = BaseLambdaEnvironmentSchema;
 
 export type IdcConfigurerLambdaEnvironment = z.infer<
   typeof IdcConfigurerLambdaEnvironmentSchema

@@ -2,115 +2,141 @@
 
 exports[`IdcStack Snapshot > matches the snapshot 1`] = `
 {
+  "Conditions": {
+    "AdminGroupNameEmptyCondition": {
+      "Fn::Equals": [
+        {
+          "Ref": "AdminGroupName",
+        },
+        "",
+      ],
+    },
+    "ManagerGroupNameEmptyCondition": {
+      "Fn::Equals": [
+        {
+          "Ref": "ManagerGroupName",
+        },
+        "",
+      ],
+    },
+    "UserGroupNameEmptyCondition": {
+      "Fn::Equals": [
+        {
+          "Ref": "UserGroupName",
+        },
+        "",
+      ],
+    },
+  },
   "Mappings": {
     "LatestNodeRuntimeMap": {
       "af-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-east-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-northeast-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-northeast-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-northeast-3": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-south-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-3": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-4": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-5": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-7": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ca-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ca-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "cn-north-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "cn-northwest-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-central-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-isoe-west-1": {
         "value": "nodejs18.x",
       },
       "eu-north-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-south-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-west-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-west-3": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "il-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "me-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "me-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "mx-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "sa-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-east-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-gov-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-gov-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-iso-east-1": {
         "value": "nodejs18.x",
@@ -125,10 +151,10 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
         "value": "nodejs18.x",
       },
       "us-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-west-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
     },
     "Mapping": {
@@ -139,13 +165,13 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.0.0",
+        "publicEcrTag": "v1.0.1",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "sendAnonymizedUsageMetrics": "true",
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.0.0",
+        "version": "v1.0.1",
       },
     },
   },
@@ -161,15 +187,24 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
             "HubAccountId",
             "IdentityStoreId",
             "SsoInstanceArn",
+            "AdminGroupName",
+            "ManagerGroupName",
+            "UserGroupName",
           ],
         },
       ],
       "ParameterLabels": {
+        "AdminGroupName": {
+          "default": "Admin Group Name (Optional)",
+        },
         "HubAccountId": {
           "default": "Hub Account Id",
         },
         "IdentityStoreId": {
           "default": "Identity Store Id",
+        },
+        "ManagerGroupName": {
+          "default": "Manager Group Name (Optional)",
         },
         "Namespace": {
           "default": "Namespace",
@@ -177,10 +212,18 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
         "SsoInstanceArn": {
           "default": "SSO Instance ARN",
         },
+        "UserGroupName": {
+          "default": "User Group Name (Optional)",
+        },
       },
     },
   },
   "Parameters": {
+    "AdminGroupName": {
+      "Default": "",
+      "Description": "A custom name to provide for the admin group (value if left empty: <namespace>_IsbAdminsGroup).",
+      "Type": "String",
+    },
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
       "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
@@ -196,6 +239,11 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
       "Description": "The Identity Store Id of the Identity Source in IAM Identity Center (d-xxxxxxxxxx)",
       "Type": "String",
     },
+    "ManagerGroupName": {
+      "Default": "",
+      "Description": "A custom name to provide for the manager group (value if left empty: <namespace>_IsbManagersGroup).",
+      "Type": "String",
+    },
     "Namespace": {
       "AllowedPattern": "^[0-9a-zA-Z]{3,8}$",
       "Default": "myisb",
@@ -205,6 +253,11 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
     "SsoInstanceArn": {
       "AllowedPattern": "^arn:aws:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$",
       "Description": "The ARN of the SSO instance in IAM Identity Center (arn:aws:sso:::instance/ssoins-xxxxxxxxxxxxxxxx)",
+      "Type": "String",
+    },
+    "UserGroupName": {
+      "Default": "",
+      "Description": "A custom name to provide for the user group (value if left empty: <namespace>_IsbUsersGroup).",
       "Type": "String",
     },
   },
@@ -364,6 +417,48 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
               {
                 "Ref": "SsoInstanceArn",
               },
+              "","adminGroupId":"",
+              {
+                "Fn::GetAtt": [
+                  "IdcConfigurerIdcConfigurerLambdaFunctionIsbCustomResourceECB8735C",
+                  "adminGroupId",
+                ],
+              },
+              "","adminPermissionSetArn":"",
+              {
+                "Fn::GetAtt": [
+                  "IdcConfigurerIdcConfigurerLambdaFunctionIsbCustomResourceECB8735C",
+                  "adminPermissionSetArn",
+                ],
+              },
+              "","managerGroupId":"",
+              {
+                "Fn::GetAtt": [
+                  "IdcConfigurerIdcConfigurerLambdaFunctionIsbCustomResourceECB8735C",
+                  "managerGroupId",
+                ],
+              },
+              "","managerPermissionSetArn":"",
+              {
+                "Fn::GetAtt": [
+                  "IdcConfigurerIdcConfigurerLambdaFunctionIsbCustomResourceECB8735C",
+                  "managerPermissionSetArn",
+                ],
+              },
+              "","userGroupId":"",
+              {
+                "Fn::GetAtt": [
+                  "IdcConfigurerIdcConfigurerLambdaFunctionIsbCustomResourceECB8735C",
+                  "userGroupId",
+                ],
+              },
+              "","userPermissionSetArn":"",
+              {
+                "Fn::GetAtt": [
+                  "IdcConfigurerIdcConfigurerLambdaFunctionIsbCustomResourceECB8735C",
+                  "userPermissionSetArn",
+                ],
+              },
               "","solutionVersion":"",
               {
                 "Fn::FindInMap": [
@@ -430,12 +525,6 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
-            "IDENTITY_STORE_ID": {
-              "Ref": "IdentityStoreId",
-            },
-            "ISB_NAMESPACE": {
-              "Ref": "Namespace",
-            },
             "NODE_OPTIONS": "--enable-source-maps",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
@@ -448,10 +537,7 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "IdcConfigurer",
-            "SSO_INSTANCE_ARN": {
-              "Ref": "SsoInstanceArn",
-            },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -505,7 +591,7 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
             },
           },
         ],
-        "Timeout": 60,
+        "Timeout": 900,
         "TracingConfig": {
           "Mode": "Active",
         },
@@ -594,7 +680,7 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
               },
             },
             {
-              "Action": "identitystore:ListGroups",
+              "Action": "identitystore:GetGroupId",
               "Effect": "Allow",
               "Resource": [
                 {
@@ -725,6 +811,72 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
           "Fn::GetAtt": [
             "IdcConfigurerIdcConfigurerLambdaFunctionIsbProviderframeworkonEvent40CCC6DC",
             "Arn",
+          ],
+        },
+        "adminGroupName": {
+          "Fn::If": [
+            "AdminGroupNameEmptyCondition",
+            {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_IsbAdminsGroup",
+                ],
+              ],
+            },
+            {
+              "Ref": "AdminGroupName",
+            },
+          ],
+        },
+        "identityStoreId": {
+          "Ref": "IdentityStoreId",
+        },
+        "managerGroupName": {
+          "Fn::If": [
+            "ManagerGroupNameEmptyCondition",
+            {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_IsbManagersGroup",
+                ],
+              ],
+            },
+            {
+              "Ref": "ManagerGroupName",
+            },
+          ],
+        },
+        "namespace": {
+          "Ref": "Namespace",
+        },
+        "ssoInstanceArn": {
+          "Ref": "SsoInstanceArn",
+        },
+        "userGroupName": {
+          "Fn::If": [
+            "UserGroupNameEmptyCondition",
+            {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_IsbUsersGroup",
+                ],
+              ],
+            },
+            {
+              "Ref": "UserGroupName",
+            },
           ],
         },
       },
@@ -1380,112 +1532,112 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
   "Mappings": {
     "LatestNodeRuntimeMap": {
       "af-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-east-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-northeast-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-northeast-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-northeast-3": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-south-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-3": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-4": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-5": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-7": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ca-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ca-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "cn-north-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "cn-northwest-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-central-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-isoe-west-1": {
         "value": "nodejs18.x",
       },
       "eu-north-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-south-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-west-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-west-3": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "il-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "me-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "me-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "mx-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "sa-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-east-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-gov-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-gov-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-iso-east-1": {
         "value": "nodejs18.x",
@@ -1500,10 +1652,10 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
         "value": "nodejs18.x",
       },
       "us-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-west-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
     },
     "Mapping": {
@@ -1514,13 +1666,13 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.0.0",
+        "publicEcrTag": "v1.0.1",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "sendAnonymizedUsageMetrics": "true",
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.0.0",
+        "version": "v1.0.1",
       },
     },
   },
@@ -1840,7 +1992,7 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -3881,112 +4033,112 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
     },
     "LatestNodeRuntimeMap": {
       "af-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-east-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-northeast-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-northeast-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-northeast-3": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-south-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-3": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-4": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-5": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ap-southeast-7": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ca-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "ca-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "cn-north-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "cn-northwest-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-central-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-isoe-west-1": {
         "value": "nodejs18.x",
       },
       "eu-north-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-south-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-west-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "eu-west-3": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "il-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "me-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "me-south-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "mx-central-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "sa-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-east-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-gov-east-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-gov-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-iso-east-1": {
         "value": "nodejs18.x",
@@ -4001,10 +4153,10 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "value": "nodejs18.x",
       },
       "us-west-1": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
       "us-west-2": {
-        "value": "nodejs20.x",
+        "value": "nodejs22.x",
       },
     },
     "Mapping": {
@@ -4015,13 +4167,13 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.0.0",
+        "publicEcrTag": "v1.0.1",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "sendAnonymizedUsageMetrics": "true",
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.0.0",
+        "version": "v1.0.1",
       },
     },
   },
@@ -4894,7 +5046,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -5827,7 +5979,7 @@ phases:
                 "sandboxOuId",
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -6473,12 +6625,6 @@ phases:
                 ],
               ],
             },
-            "IDENTITY_STORE_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "identityStoreId",
-              ],
-            },
             "INTERMEDIATE_ROLE_ARN": {
               "Fn::GetAtt": [
                 "IntermediateRole6D2F2036",
@@ -6538,13 +6684,7 @@ phases:
                 "sandboxOuId",
               ],
             },
-            "SSO_INSTANCE_ARN": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "ssoInstanceArn",
-              ],
-            },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -6669,6 +6809,34 @@ phases:
                 "Fn::GetAtt": [
                   "ISBLogGroupE607F9A7",
                   "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "IdcAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_Idc_Configuration",
+                  ],
                 ],
               },
             },
@@ -7080,7 +7248,7 @@ phases:
                 },
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -7361,7 +7529,7 @@ phases:
                 },
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -7873,7 +8041,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -8910,7 +9078,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -9187,7 +9355,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -9795,7 +9963,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -10252,12 +10420,6 @@ phases:
                 ],
               ],
             },
-            "IDENTITY_STORE_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "identityStoreId",
-              ],
-            },
             "INTERMEDIATE_ROLE_ARN": {
               "Fn::GetAtt": [
                 "IntermediateRole6D2F2036",
@@ -10282,13 +10444,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "SSO_INSTANCE_ARN": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "ssoInstanceArn",
-              ],
-            },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -10442,6 +10598,34 @@ phases:
                 "Fn::GetAtt": [
                   "IntermediateRole6D2F2036",
                   "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "IdcAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_Idc_Configuration",
+                  ],
                 ],
               },
             },
@@ -15007,7 +15191,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -15529,7 +15713,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -15839,7 +16023,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -16228,7 +16412,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -16632,12 +16816,6 @@ phases:
                 ],
               ],
             },
-            "IDENTITY_STORE_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "identityStoreId",
-              ],
-            },
             "INTERMEDIATE_ROLE_ARN": {
               "Fn::GetAtt": [
                 "IntermediateRole6D2F2036",
@@ -16700,13 +16878,7 @@ phases:
                 "sandboxOuId",
               ],
             },
-            "SSO_INSTANCE_ARN": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "ssoInstanceArn",
-              ],
-            },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -16831,6 +17003,34 @@ phases:
                 "Fn::GetAtt": [
                   "ISBLogGroupE607F9A7",
                   "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "IdcAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_Idc_Configuration",
+                  ],
                 ],
               },
             },
@@ -17217,7 +17417,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -18009,12 +18209,6 @@ fields @timestamp, @message
                 ],
               ],
             },
-            "IDENTITY_STORE_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "identityStoreId",
-              ],
-            },
             "INTERMEDIATE_ROLE_ARN": {
               "Fn::GetAtt": [
                 "IntermediateRole6D2F2036",
@@ -18071,13 +18265,7 @@ fields @timestamp, @message
                 "sandboxOuId",
               ],
             },
-            "SSO_INSTANCE_ARN": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "ssoInstanceArn",
-              ],
-            },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -18203,6 +18391,34 @@ fields @timestamp, @message
                 "Fn::GetAtt": [
                   "ISBLogGroupE607F9A7",
                   "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "IdcAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_Idc_Configuration",
+                  ],
                 ],
               },
             },
@@ -18716,12 +18932,6 @@ fields @timestamp, @message
                 ],
               ],
             },
-            "IDENTITY_STORE_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "identityStoreId",
-              ],
-            },
             "IDP_CERT_SECRET_NAME": {
               "Fn::Join": [
                 "",
@@ -18767,13 +18977,7 @@ fields @timestamp, @message
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "SsoHandler",
-            "SSO_INSTANCE_ARN": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "ssoInstanceArn",
-              ],
-            },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.1",
           },
         },
         "FunctionName": {
@@ -18898,6 +19102,34 @@ fields @timestamp, @message
                 "Fn::GetAtt": [
                   "ISBLogGroupE607F9A7",
                   "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "IdcAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_Idc_Configuration",
+                  ],
                 ],
               },
             },
@@ -19042,13 +19274,13 @@ exports[`IsbDataStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.0.0",
+        "publicEcrTag": "v1.0.1",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "sendAnonymizedUsageMetrics": "true",
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.0.0",
+        "version": "v1.0.1",
       },
     },
   },

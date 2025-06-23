@@ -27,13 +27,32 @@ export interface IsbIdcResourcesProps {
   hubAccountId: string;
   identityStoreId: string;
   ssoInstanceArn: string;
+  adminGroupName: string;
+  managerGroupName: string;
+  userGroupName: string;
   namespace: string;
   solutionVersion: string;
 }
 
 export class IsbIdcResources {
   constructor(scope: Construct, props: IsbIdcResourcesProps) {
-    new IdcConfigurer(scope, "IdcConfigurer", props);
+    const identityStoreArn = Stack.of(scope).formatArn({
+      service: "identitystore",
+      resource: "identitystore",
+      region: "",
+      arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+      resourceName: props.identityStoreId,
+    });
+    const instanceId = Fn.select(1, Fn.split("/", props.ssoInstanceArn));
+
+    const idcConfigurer = new IdcConfigurer(scope, "IdcConfigurer", {
+      namespace: props.namespace,
+      ssoInstanceArn: props.ssoInstanceArn,
+      identityStoreId: props.identityStoreId,
+      adminGroupName: props.adminGroupName,
+      managerGroupName: props.managerGroupName,
+      userGroupName: props.userGroupName,
+    });
 
     const idcRole = new Role(scope, "IdcRole", {
       roleName: getIdcRoleName(props.namespace),
@@ -53,15 +72,6 @@ export class IsbIdcResources {
         },
       ),
     });
-
-    const identityStoreArn = Stack.of(scope).formatArn({
-      service: "identitystore",
-      resource: "identitystore",
-      region: "",
-      arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-      resourceName: props.identityStoreId,
-    });
-    const instanceId = Fn.select(1, Fn.split("/", props.ssoInstanceArn));
 
     idcRole.attachInlinePolicy(
       new Policy(scope, "IdcRolePolicy", {
@@ -187,6 +197,12 @@ export class IsbIdcResources {
         stringValue: JSON.stringify({
           identityStoreId: props.identityStoreId,
           ssoInstanceArn: props.ssoInstanceArn,
+          adminGroupId: idcConfigurer.adminGroupId,
+          adminPermissionSetArn: idcConfigurer.adminPermissionSetArn,
+          managerGroupId: idcConfigurer.managerGroupId,
+          managerPermissionSetArn: idcConfigurer.managerPermissionSetArn,
+          userGroupId: idcConfigurer.userGroupId,
+          userPermissionSetArn: idcConfigurer.userPermissionSetArn,
           solutionVersion: props.solutionVersion,
           supportedSchemas: JSON.stringify(supportedSchemas),
         } satisfies IdcConfig),

@@ -5,6 +5,7 @@ import { Construct } from "constructs";
 import path from "path";
 
 import { AccountLifecycleManagementEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-lifecycle-management-lambda-environment.js";
+import { sharedIdcSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { EventsToSqsToLambda } from "@amzn/innovation-sandbox-infrastructure/components/events-to-sqs-to-lambda";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
@@ -16,6 +17,7 @@ import {
 import {
   grantIsbAppConfigRead,
   grantIsbDbReadWrite,
+  grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
@@ -47,8 +49,6 @@ export class AccountLifecycleManagementLambda extends Construct {
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const { sandboxOuId } = IsbComputeStack.sharedSpokeConfig.accountPool;
-    const { identityStoreId, ssoInstanceArn } =
-      IsbComputeStack.sharedSpokeConfig.idc;
 
     const lambda = new IsbLambdaFunction(this, id, {
       description:
@@ -74,8 +74,6 @@ export class AccountLifecycleManagementLambda extends Construct {
         AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
         ISB_EVENT_BUS: props.isbEventBus.eventBusName,
         ISB_NAMESPACE: props.namespace,
-        IDENTITY_STORE_ID: identityStoreId,
-        SSO_INSTANCE_ARN: ssoInstanceArn,
         ACCOUNT_TABLE_NAME: accountTable,
         SANDBOX_OU_ID: sandboxOuId,
         LEASE_TABLE_NAME: leaseTable,
@@ -92,6 +90,11 @@ export class AccountLifecycleManagementLambda extends Construct {
       reservedConcurrentExecutions: 1,
     });
 
+    grantIsbSsmParameterRead(
+      lambda.lambdaFunction.role! as Role,
+      sharedIdcSsmParamName(props.namespace),
+      props.idcAccountId,
+    );
     grantIsbDbReadWrite(scope, lambda, leaseTable, accountTable);
     grantIsbAppConfigRead(scope, lambda, globalConfigConfigurationProfileId);
     addAppConfigExtensionLayer(lambda);

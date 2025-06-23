@@ -6,6 +6,7 @@ import { Construct } from "constructs";
 import path from "path";
 
 import { AccountLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-lambda-environment.js";
+import { sharedIdcSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import {
   RestApi,
   RestApiProps,
@@ -20,6 +21,7 @@ import {
 import {
   grantIsbAppConfigRead,
   grantIsbDbReadWrite,
+  grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 import { Aws } from "aws-cdk-lib";
@@ -35,8 +37,6 @@ export class AccountsApi {
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const { sandboxOuId } = IsbComputeStack.sharedSpokeConfig.accountPool;
-    const { identityStoreId, ssoInstanceArn } =
-      IsbComputeStack.sharedSpokeConfig.idc;
 
     const accountsLambdaFunction = new IsbLambdaFunction(
       scope,
@@ -77,8 +77,6 @@ export class AccountsApi {
             props.namespace,
             props.idcAccountId,
           ),
-          IDENTITY_STORE_ID: identityStoreId,
-          SSO_INSTANCE_ARN: ssoInstanceArn,
           ISB_EVENT_BUS: props.isbEventBus.eventBusName,
           SANDBOX_OU_ID: sandboxOuId,
           ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
@@ -90,6 +88,11 @@ export class AccountsApi {
       },
     );
 
+    grantIsbSsmParameterRead(
+      accountsLambdaFunction.lambdaFunction.role! as Role,
+      sharedIdcSsmParamName(props.namespace),
+      props.idcAccountId,
+    );
     grantIsbDbReadWrite(
       scope,
       accountsLambdaFunction,

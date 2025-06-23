@@ -12,7 +12,10 @@ import path from "path";
 
 import { SecretsRotatorEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/secrets-rotator-lambda-environment.js";
 import { SsoLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/sso-lambda-environment.js";
-import { SECRET_NAME_PREFIX } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import {
+  SECRET_NAME_PREFIX,
+  sharedIdcSsmParamName,
+} from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import {
   RestApi as ApiGatewayRestApi,
   RestApiProps,
@@ -25,7 +28,10 @@ import {
   IntermediateRole,
   getIdcRoleArn,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
-import { grantIsbAppConfigRead } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
+import {
+  grantIsbAppConfigRead,
+  grantIsbSsmParameterRead,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
 export class AuthApi {
@@ -141,9 +147,6 @@ export class AuthApi {
         INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
         IDC_ROLE_ARN: getIdcRoleArn(scope, props.namespace, props.idcAccountId),
         ISB_NAMESPACE: props.namespace,
-        IDENTITY_STORE_ID:
-          IsbComputeStack.sharedSpokeConfig.idc.identityStoreId,
-        SSO_INSTANCE_ARN: IsbComputeStack.sharedSpokeConfig.idc.ssoInstanceArn,
         APP_CONFIG_APPLICATION_ID: configApplicationId,
         APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
         APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
@@ -153,6 +156,11 @@ export class AuthApi {
       envSchema: SsoLambdaEnvironmentSchema,
     });
 
+    grantIsbSsmParameterRead(
+      ssoLambda.lambdaFunction.role! as Role,
+      sharedIdcSsmParamName(props.namespace),
+      props.idcAccountId,
+    );
     grantIsbAppConfigRead(scope, ssoLambda, globalConfigConfigurationProfileId);
     addAppConfigExtensionLayer(ssoLambda);
     ssoLambda.lambdaFunction.addToRolePolicy(secretAccessPolicy);
