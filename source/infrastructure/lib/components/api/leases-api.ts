@@ -6,6 +6,7 @@ import { Construct } from "constructs";
 import path from "path";
 
 import { LeaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-lambda-environment.js";
+import { sharedIdcSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import {
   RestApi,
   RestApiProps,
@@ -20,6 +21,7 @@ import {
 import {
   grantIsbAppConfigRead,
   grantIsbDbReadWrite,
+  grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
@@ -35,8 +37,7 @@ export class LeasesApi {
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const { sandboxOuId } = IsbComputeStack.sharedSpokeConfig.accountPool;
-    const { identityStoreId, ssoInstanceArn } =
-      IsbComputeStack.sharedSpokeConfig.idc;
+
     const leasesLambdaFunction = new IsbLambdaFunction(
       scope,
       "LeasesLambdaFunction",
@@ -68,8 +69,6 @@ export class LeasesApi {
           LEASE_TEMPLATE_TABLE_NAME: leaseTemplateTable,
           SANDBOX_OU_ID: sandboxOuId,
           ISB_EVENT_BUS: props.isbEventBus.eventBusName,
-          IDENTITY_STORE_ID: identityStoreId,
-          SSO_INSTANCE_ARN: ssoInstanceArn,
           INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
           IDC_ROLE_ARN: getIdcRoleArn(
             scope,
@@ -87,6 +86,11 @@ export class LeasesApi {
       },
     );
 
+    grantIsbSsmParameterRead(
+      leasesLambdaFunction.lambdaFunction.role! as Role,
+      sharedIdcSsmParamName(props.namespace),
+      props.idcAccountId,
+    );
     grantIsbDbReadWrite(
       scope,
       leasesLambdaFunction,
@@ -94,7 +98,6 @@ export class LeasesApi {
       leaseTemplateTable,
       accountTable,
     );
-
     grantIsbAppConfigRead(
       scope,
       leasesLambdaFunction,

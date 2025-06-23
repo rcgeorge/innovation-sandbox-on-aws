@@ -209,6 +209,44 @@ export interface EnabledDisabledParameterProps extends ParameterWithLabelProps {
   default?: keyof typeof EnabledDisabledType;
 }
 
+export interface OptionalParameterProps extends ParameterWithLabelProps {
+  valueIfEmpty: string;
+}
+
+export class OptionalParameter extends ParameterWithLabel {
+  private condition?: CfnCondition;
+  private readonly valueIfEmpty: string;
+
+  constructor(scope: Construct, id: string, props: OptionalParameterProps) {
+    super(scope, id, {
+      ...props,
+      default: "",
+    });
+    this.valueIfEmpty = props.valueIfEmpty;
+  }
+
+  private getCondition(): CfnCondition {
+    if (!this.condition) {
+      this.condition = new CfnCondition(
+        this.stack,
+        `${this.node.id}EmptyCondition`,
+        {
+          expression: Fn.conditionEquals(this.valueAsString, ""),
+        },
+      );
+    }
+    return this.condition;
+  }
+
+  override resolve(): string {
+    return Fn.conditionIf(
+      this.getCondition().logicalId,
+      this.valueIfEmpty,
+      this.valueAsString,
+    ).toString();
+  }
+}
+
 export class EnabledDisabledParameter extends ParameterWithLabel {
   private condition?: CfnCondition;
   private conditionId: string;

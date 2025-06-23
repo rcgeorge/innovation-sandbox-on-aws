@@ -149,16 +149,17 @@ react-router under the MIT license.
 @aws-crypto/supports-web-crypto under the Apache-2.0 license.
 @aws-sdk/util-locate-window under the Apache-2.0 license.
 @aws-sdk/core under the Apache-2.0 license.
+@aws-sdk/xml-builder under the Apache-2.0 license.
 @smithy/core under the Apache-2.0 license.
 @smithy/middleware-serde under the Apache-2.0 license.
 @smithy/protocol-http under the Apache-2.0 license.
+@smithy/util-base64 under the Apache-2.0 license.
 @smithy/util-body-length-browser under the Apache-2.0 license.
 @smithy/util-middleware under the Apache-2.0 license.
 @smithy/util-stream under the Apache-2.0 license.
 @smithy/fetch-http-handler under the Apache-2.0 license.
 @smithy/querystring-builder under the Apache-2.0 license.
 @smithy/util-uri-escape under the Apache-2.0 license.
-@smithy/util-base64 under the Apache-2.0 license.
 @smithy/node-http-handler under the Apache-2.0 license.
 @smithy/abort-controller under the Apache-2.0 license.
 @smithy/util-hex-encoding under the Apache-2.0 license.
@@ -483,6 +484,8 @@ typescript under the Apache-2.0 license.
 @typescript-eslint/types under the MIT license.
 @typescript-eslint/visitor-keys under the MIT license.
 @typescript-eslint/typescript-estree under the MIT license.
+@typescript-eslint/project-service under the MIT license.
+@typescript-eslint/tsconfig-utils under the MIT license.
 fast-glob under the MIT license.
 merge2 under the MIT license.
 micromatch under the MIT license.
@@ -595,6 +598,7 @@ gensync under the MIT license.
 @babel/plugin-transform-react-jsx-self under the MIT license.
 @babel/helper-plugin-utils under the MIT license.
 @babel/plugin-transform-react-jsx-source under the MIT license.
+@rolldown/pluginutils under the MIT license.
 @types/babel__core under the MIT license.
 @types/babel__generator under the MIT license.
 to-fast-properties under the MIT license.
@@ -635,11 +639,11 @@ call-bind under the MIT license.
 set-function-length under the MIT license.
 define-data-property under the MIT license.
 has-property-descriptors under the MIT license.
+call-bound under the MIT license.
 define-properties under the MIT license.
 object-keys under the MIT license.
 es-abstract under the MIT license.
 array-buffer-byte-length under the MIT license.
-call-bound under the MIT license.
 is-array-buffer under the MIT license.
 arraybuffer.prototype.slice under the MIT license.
 available-typed-arrays under the MIT license.
@@ -668,6 +672,8 @@ object-inspect under the MIT license.
 side-channel-list under the MIT license.
 side-channel-map under the MIT license.
 side-channel-weakmap under the MIT license.
+is-negative-zero under the MIT license.
+is-set under the MIT license.
 is-shared-array-buffer under the MIT license.
 is-string under the MIT license.
 is-weakref under the MIT license.
@@ -678,6 +684,7 @@ regexp.prototype.flags under the MIT license.
 set-function-name under the MIT license.
 safe-array-concat under the MIT license.
 set-proto under the MIT license.
+stop-iteration-iterator under the MIT license.
 string.prototype.trim under the MIT license.
 string.prototype.trimend under the MIT license.
 string.prototype.trimstart under the MIT license.
@@ -697,7 +704,6 @@ is-boolean-object under the MIT license.
 is-number-object under the MIT license.
 which-collection under the MIT license.
 is-map under the MIT license.
-is-set under the MIT license.
 is-weakmap under the MIT license.
 is-weakset under the MIT license.
 typed-array-length under the MIT license.
@@ -944,7 +950,6 @@ shimmer under the BSD-2-Clause license.
 @aws-crypto/crc32c under the Apache-2.0 license.
 @aws-sdk/middleware-location-constraint under the Apache-2.0 license.
 @aws-sdk/middleware-ssec under the Apache-2.0 license.
-@aws-sdk/xml-builder under the Apache-2.0 license.
 @smithy/hash-blob-browser under the Apache-2.0 license.
 @smithy/chunked-blob-reader under the Apache-2.0 license.
 @smithy/chunked-blob-reader-native under the Apache-2.0 license.
@@ -1042,6 +1047,7 @@ send under the MIT license.
 mime under the MIT license.
 serve-static under the MIT license.
 json-diff-ts under the MIT license.
+es-toolkit under the MIT license.
 jsonwebtoken under the MIT license.
 jws under the MIT license.
 jwa under the MIT license.
@@ -1089,6 +1095,8 @@ javascript-natural-sort under the MIT license.
 @types/cookiejar under the MIT license.
 @vitest/coverage-v8 under the MIT license.
 vitest under the MIT license.
+@types/chai under the MIT license.
+@types/deep-eql under the MIT license.
 @vitest/expect under the MIT license.
 @vitest/spy under the MIT license.
 tinyspy under the MIT license.
@@ -1106,6 +1114,7 @@ estree-walker under the MIT license.
 magic-string under the MIT license.
 @vitest/runner under the MIT license.
 pathe under the MIT license.
+strip-literal under the MIT license.
 @vitest/snapshot under the MIT license.
 expect-type under the Apache-2.0 license.
 std-env under the MIT license.
@@ -1118,6 +1127,7 @@ why-is-node-running under the MIT license.
 siginfo under the ISC license.
 stackback under the MIT license.
 @bcoe/v8-coverage under the MIT license.
+ast-v8-to-istanbul under the MIT license.
 istanbul-lib-coverage under the BSD-3-Clause license.
 istanbul-lib-report under the BSD-3-Clause license.
 make-dir under the MIT license.

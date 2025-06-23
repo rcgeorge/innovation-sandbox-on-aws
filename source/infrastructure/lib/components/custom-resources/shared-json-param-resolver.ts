@@ -16,6 +16,12 @@ export class SharedJsonParamResolver extends Construct {
   //Idc
   public readonly identityStoreId: string;
   public readonly ssoInstanceArn: string;
+  public readonly adminGroupId: string;
+  public readonly managerGroupId: string;
+  public readonly userGroupId: string;
+  public readonly adminPermissionSetArn: string;
+  public readonly managerPermissionSetArn: string;
+  public readonly userPermissionSetArn: string;
   public readonly idcSolutionVersion: string;
   public readonly idcSupportedSchemas: string;
   //AccountPool
@@ -91,6 +97,20 @@ export class SharedJsonParamResolver extends Construct {
       sharedJsonParamCR.customResource.getAttString("identityStoreId");
     this.ssoInstanceArn =
       sharedJsonParamCR.customResource.getAttString("ssoInstanceArn");
+    this.adminGroupId =
+      sharedJsonParamCR.customResource.getAttString("adminGroupId");
+    this.managerGroupId =
+      sharedJsonParamCR.customResource.getAttString("managerGroupId");
+    this.userGroupId =
+      sharedJsonParamCR.customResource.getAttString("userGroupId");
+    this.adminPermissionSetArn = sharedJsonParamCR.customResource.getAttString(
+      "adminPermissionSetArn",
+    );
+    this.managerPermissionSetArn =
+      sharedJsonParamCR.customResource.getAttString("managerPermissionSetArn");
+    this.userPermissionSetArn = sharedJsonParamCR.customResource.getAttString(
+      "userPermissionSetArn",
+    );
     this.idcSolutionVersion =
       sharedJsonParamCR.customResource.getAttString("idcSolutionVersion");
     this.idcSupportedSchemas = sharedJsonParamCR.customResource.getAttString(

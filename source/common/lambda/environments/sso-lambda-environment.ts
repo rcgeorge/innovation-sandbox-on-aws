@@ -10,8 +10,6 @@ export const SsoLambdaEnvironmentSchema = BaseLambdaEnvironmentSchema.extend({
   INTERMEDIATE_ROLE_ARN: z.string(),
   IDC_ROLE_ARN: z.string(),
   ISB_NAMESPACE: z.string(),
-  IDENTITY_STORE_ID: z.string(),
-  SSO_INSTANCE_ARN: z.string(),
   APP_CONFIG_APPLICATION_ID: z.string(),
   APP_CONFIG_PROFILE_ID: z.string(),
   APP_CONFIG_ENVIRONMENT_ID: z.string(),

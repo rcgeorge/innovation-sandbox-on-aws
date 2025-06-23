@@ -48,8 +48,6 @@ export namespace ServiceEnv {
 
   export type idcService = {
     ISB_NAMESPACE: string;
-    IDENTITY_STORE_ID: string;
-    SSO_INSTANCE_ARN: string;
     USER_AGENT_EXTRA: string;
   };
 
@@ -66,8 +64,6 @@ export namespace ServiceEnv {
 
   export type emailService = {
     ISB_NAMESPACE: string;
-    IDENTITY_STORE_ID: string;
-    SSO_INSTANCE_ARN: string;
     IDC_ROLE_ARN: string;
     INTERMEDIATE_ROLE_ARN: string;
     USER_AGENT_EXTRA: string;
@@ -128,8 +124,7 @@ export class IsbServices {
   ) {
     return new IdcService({
       namespace: env.ISB_NAMESPACE,
-      identityStoreId: env.IDENTITY_STORE_ID,
-      ssoInstanceArn: env.SSO_INSTANCE_ARN,
+      ssmClient: IsbClients.ssm(env),
       ssoAdminClient: IsbClients.ssoAdmin(env, credentials),
       identityStoreClient: IsbClients.identityStore(env, credentials),
     });

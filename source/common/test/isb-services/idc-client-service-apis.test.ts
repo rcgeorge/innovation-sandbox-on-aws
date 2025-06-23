@@ -6,15 +6,12 @@ import {
   IdentitystoreClient,
   ListGroupMembershipsCommand,
   ListGroupMembershipsForMemberCommand,
-  ListGroupsCommand,
 } from "@aws-sdk/client-identitystore";
+import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 import {
   CreateAccountAssignmentCommand,
   DeleteAccountAssignmentCommand,
-  DescribePermissionSetCommand,
   ListAccountAssignmentsCommand,
-  ListPermissionSetsCommand,
-  PermissionSet,
   PrincipalType,
   SSOAdminClient,
   TargetType,
@@ -23,10 +20,6 @@ import { mockClient } from "aws-sdk-client-mock";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearCache } from "@amzn/innovation-sandbox-commons/isb-services/idc-cache.js";
-import {
-  IsbGroupAttrs,
-  IsbPermissionSetAttrs,
-} from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   IsbRole,
@@ -51,24 +44,41 @@ vi.mock("@amzn/innovation-sandbox-commons/utils/cross-account-roles.js", () => {
 describe("Idc service api", () => {
   const identityStoreMock = mockClient(IdentitystoreClient);
   const ssoAdminMock = mockClient(SSOAdminClient);
-  const idcHelper = IsbServices.idcService(test_env);
+  const ssmClientMock = mockClient(SSMClient);
+  const testPermissionSetArn =
+    "arn:aws:sso:::permissionSet/ssoins-11111111/ps-11111111";
 
-  const defaultIsbGroupAttrs: IsbGroupAttrs = (idcHelper as any)
-    .defaultIsbGroupAttrs;
-  const defaultIsbPermissionSetAttrs: IsbPermissionSetAttrs = (idcHelper as any)
-    .defaultIsbPermissionSetAttrs;
+  const idcConfig = {
+    identityStoreId: test_env.IDENTITY_STORE_ID,
+    ssoInstanceArn: test_env.SSO_INSTANCE_ARN,
+    userGroupId: "user-group-id",
+    managerGroupId: "manager-group-id",
+    adminGroupId: "admin-group-id",
+    userPermissionSetArn: testPermissionSetArn,
+    managerPermissionSetArn: testPermissionSetArn,
+    adminPermissionSetArn: testPermissionSetArn,
+  };
 
   beforeEach(() => {
     identityStoreMock.reset();
     ssoAdminMock.reset();
+    ssmClientMock.reset();
     clearCache();
+
+    ssmClientMock.on(GetParameterCommand).resolves({
+      Parameter: {
+        Name: `/isb/${test_env.ISB_NAMESPACE}/idc`,
+        Type: "String",
+        Value: JSON.stringify(idcConfig),
+      },
+    });
   });
 
+  const idcService = IsbServices.idcService(test_env);
+
   describe("users and assignment", async () => {
-    const testGroupId = "TestGroup1";
-    const testUserId = "TestUser1";
     const testIdcUser = {
-      UserId: testUserId,
+      UserId: "TestUser",
       DisplayName: "Test User",
       UserName: "testuser",
       Emails: [
@@ -82,30 +92,13 @@ describe("Idc service api", () => {
         },
       ],
     };
-    const testGroups = Object.values(defaultIsbGroupAttrs).map((groupAttrs) => {
-      return {
-        DisplayName: groupAttrs.name,
-        GroupId: testGroupId,
-        IdentityStoreId: test_env.IDENTITY_STORE_ID,
-      };
-    });
-    const isbUserGroup = defaultIsbGroupAttrs["User"];
-    const testUserGroup = {
-      DisplayName: isbUserGroup.name,
-      GroupId: testGroupId,
-      IdentityStoreId: test_env.IDENTITY_STORE_ID,
-    };
 
     it.each<[role: IsbRole, noUserInGroup: boolean]>([
       ["User", false],
       ["Manager", false],
       ["Admin", false],
       ["User", true],
-    ])("should list users for role %s", async (role, noUserInGroup) => {
-      identityStoreMock.on(ListGroupsCommand).resolves({
-        Groups: testGroups,
-      });
-
+    ])("should list users for role", async (role, noUserInGroup) => {
       if (noUserInGroup) {
         identityStoreMock.on(ListGroupMembershipsCommand).resolves({
           GroupMemberships: [],
@@ -116,7 +109,7 @@ describe("Idc service api", () => {
             {
               IdentityStoreId: test_env.IDENTITY_STORE_ID,
               MemberId: {
-                UserId: testUserId,
+                UserId: testIdcUser.UserId,
               },
             },
           ],
@@ -128,13 +121,13 @@ describe("Idc service api", () => {
       const users: IsbUser[] = [];
       switch (role) {
         case "Admin":
-          users.push(...(await idcHelper.listIsbAdmins()).result);
+          users.push(...(await idcService.listIsbAdmins()).result);
           break;
         case "Manager":
-          users.push(...(await idcHelper.listIsbManagers()).result);
+          users.push(...(await idcService.listIsbManagers()).result);
           break;
         case "User":
-          users.push(...(await idcHelper.listIsbUsers()).result);
+          users.push(...(await idcService.listIsbUsers()).result);
           break;
       }
       if (noUserInGroup) {
@@ -142,7 +135,7 @@ describe("Idc service api", () => {
       } else {
         expect(users.length).toBe(1);
         expect(users[0]).toMatchObject({
-          userId: testUserId,
+          userId: testIdcUser.UserId,
           displayName: testIdcUser.DisplayName,
           userName: testIdcUser.UserName,
           email: testIdcUser.Emails[0]!.Value,
@@ -152,16 +145,13 @@ describe("Idc service api", () => {
 
     it("should get list of users with pagination", async () => {
       const nextTextToken = "TestToken";
-      identityStoreMock.on(ListGroupsCommand).resolves({
-        Groups: testGroups,
-      });
 
       identityStoreMock.on(ListGroupMembershipsCommand).resolves({
         GroupMemberships: [
           {
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
             MemberId: {
-              UserId: testUserId,
+              UserId: testIdcUser.UserId,
             },
           },
         ],
@@ -170,11 +160,11 @@ describe("Idc service api", () => {
 
       identityStoreMock.on(DescribeUserCommand).resolves(testIdcUser);
 
-      const response = await idcHelper.listIsbUsers({ pageSize: 2 });
+      const response = await idcService.listIsbUsers({ pageSize: 2 });
       const users = response.result;
       expect(users.length).toBe(1);
       expect(users[0]).toMatchObject({
-        userId: testUserId,
+        userId: testIdcUser.UserId,
         displayName: testIdcUser.DisplayName,
         userName: testIdcUser.UserName,
         email: testIdcUser.Emails[0]!.Value,
@@ -186,23 +176,28 @@ describe("Idc service api", () => {
       const testEmail = "user@example.com";
 
       identityStoreMock.on(GetUserIdCommand).resolves({
-        UserId: testUserId,
+        UserId: testIdcUser.UserId,
       });
       identityStoreMock.on(DescribeUserCommand).resolves(testIdcUser);
-      identityStoreMock.on(ListGroupsCommand).resolves({
-        Groups: testGroups,
-      });
       identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
         GroupMemberships: [
           {
-            GroupId: testGroupId,
+            GroupId: idcConfig.userGroupId,
+            IdentityStoreId: test_env.IDENTITY_STORE_ID,
+          },
+          {
+            GroupId: idcConfig.managerGroupId,
+            IdentityStoreId: test_env.IDENTITY_STORE_ID,
+          },
+          {
+            GroupId: idcConfig.adminGroupId,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
         ],
       });
-      const user = await idcHelper.getUserFromEmail(testEmail);
+      const user = await idcService.getUserFromEmail(testEmail);
       expect(user).toEqual({
-        userId: testUserId,
+        userId: testIdcUser.UserId,
         displayName: testIdcUser.DisplayName,
         userName: testIdcUser.UserName,
         email: testIdcUser.Emails[0]!.Value,
@@ -214,23 +209,20 @@ describe("Idc service api", () => {
       const testEmail = "user@example.com";
 
       identityStoreMock.on(GetUserIdCommand).resolves({
-        UserId: testUserId,
+        UserId: testIdcUser.UserId,
       });
       identityStoreMock.on(DescribeUserCommand).resolves(testIdcUser);
-      identityStoreMock.on(ListGroupsCommand).resolves({
-        Groups: [testUserGroup],
-      });
       identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
         GroupMemberships: [
           {
-            GroupId: testGroupId,
+            GroupId: idcConfig.userGroupId,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
         ],
       });
-      const user = await idcHelper.getUserFromEmail(testEmail);
+      const user = await idcService.getUserFromEmail(testEmail);
       expect(user).toEqual({
-        userId: testUserId,
+        userId: testIdcUser.UserId,
         displayName: testIdcUser.DisplayName,
         userName: testIdcUser.UserName,
         email: testIdcUser.Emails[0]!.Value,
@@ -242,57 +234,47 @@ describe("Idc service api", () => {
       const testEmail = "user@example.com";
 
       identityStoreMock.on(GetUserIdCommand).resolves({
-        UserId: testUserId,
+        UserId: testIdcUser.UserId,
       });
       identityStoreMock.on(DescribeUserCommand).resolves(testIdcUser);
-      identityStoreMock.on(ListGroupsCommand).resolves({
-        Groups: [],
-      });
       identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
         GroupMemberships: [
           {
-            GroupId: testGroupId,
+            GroupId: "not-isb-group",
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
         ],
       });
-      expect(await idcHelper.getUserFromEmail(testEmail)).toEqual(undefined);
+      expect(await idcService.getUserFromEmail(testEmail)).toEqual(undefined);
     });
 
     it("should get user from user name", async () => {
       const userName = "userName1";
 
       identityStoreMock.on(GetUserIdCommand).resolves({
-        UserId: testUserId,
+        UserId: testIdcUser.UserId,
       });
       identityStoreMock.on(DescribeUserCommand).resolves(testIdcUser);
-      identityStoreMock.on(ListGroupsCommand).resolves({
-        Groups: testGroups,
-      });
       identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
         GroupMemberships: [
           {
-            GroupId: testGroupId,
+            GroupId: idcConfig.userGroupId,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
         ],
       });
-      const user = await idcHelper.getUserFromUsername(userName);
+      const user = await idcService.getUserFromUsername(userName);
       expect(user).toEqual({
-        userId: testUserId,
+        userId: testIdcUser.UserId,
         displayName: testIdcUser.DisplayName,
         userName: testIdcUser.UserName,
         email: testIdcUser.Emails[0]!.Value,
-        roles: ["User", "Manager", "Admin"],
+        roles: ["User"],
       });
     });
   });
 
   describe("Account assignment and removal", async () => {
-    const samplePermissionSetArns: string[] = [
-      "arn:aws:sso:::permissionSet/ssoins-11111111/ps-11111111",
-      "arn:aws:sso:::permissionSet/ssoins-22222222/ps-22222222",
-    ];
     const testUser: IsbUser = {
       userId: "User1",
       email: "testuser@example.com",
@@ -301,28 +283,11 @@ describe("Idc service api", () => {
     const testAccountId = "111111111111";
     const testPermissionSetArn =
       "arn:aws:sso:::permissionSet/ssoins-11111111/ps-11111111";
-    const samplePermissionSetUser: PermissionSet = {
-      Name: defaultIsbPermissionSetAttrs["User"].name,
-      Description: defaultIsbPermissionSetAttrs["User"].description,
-      PermissionSetArn: testPermissionSetArn,
-    };
-    const samplePermissionSetManager: PermissionSet = {
-      Name: defaultIsbPermissionSetAttrs["Manager"].name,
-      Description: defaultIsbPermissionSetAttrs["Manager"].description,
-      PermissionSetArn: testPermissionSetArn,
-    };
 
     it("should assign an account to a user", async () => {
       ssoAdminMock.on(CreateAccountAssignmentCommand).resolves({});
-      ssoAdminMock
-        .on(ListPermissionSetsCommand)
-        .resolves({ PermissionSets: samplePermissionSetArns });
-      ssoAdminMock
-        .on(DescribePermissionSetCommand)
-        .resolvesOnce({ PermissionSet: samplePermissionSetUser })
-        .resolvesOnce({ PermissionSet: samplePermissionSetManager });
 
-      await idcHelper
+      await idcService
         .transactionalGrantUserAccess(testAccountId, testUser)
         .complete();
 
@@ -345,16 +310,10 @@ describe("Idc service api", () => {
 
     it("should throw an error if the api fails", async () => {
       ssoAdminMock
-        .on(ListPermissionSetsCommand)
-        .resolves({ PermissionSets: samplePermissionSetArns });
-      ssoAdminMock
-        .on(DescribePermissionSetCommand)
-        .resolves({ PermissionSet: samplePermissionSetUser });
-      ssoAdminMock
         .on(CreateAccountAssignmentCommand)
         .rejects(new Error("Unexpected Error"));
       await expect(
-        idcHelper
+        idcService
           .transactionalGrantUserAccess(testAccountId, testUser)
           .complete(),
       ).rejects.toThrow("Transaction Failed: Error: Unexpected Error");
@@ -362,15 +321,19 @@ describe("Idc service api", () => {
 
     it("should delete account assignment for a user", async () => {
       ssoAdminMock.on(DeleteAccountAssignmentCommand).resolves({});
-      ssoAdminMock
-        .on(ListPermissionSetsCommand)
-        .resolves({ PermissionSets: samplePermissionSetArns });
-      ssoAdminMock
-        .on(DescribePermissionSetCommand)
-        .resolvesOnce({ PermissionSet: samplePermissionSetUser })
-        .resolvesOnce({ PermissionSet: samplePermissionSetManager });
 
-      await idcHelper.revokeUserAccess(testAccountId, testUser);
+      ssoAdminMock.on(ListAccountAssignmentsCommand).resolves({
+        AccountAssignments: [
+          {
+            AccountId: testAccountId,
+            PermissionSetArn: testPermissionSetArn,
+            PrincipalId: testUser.userId,
+            PrincipalType: PrincipalType.USER,
+          },
+        ],
+      });
+
+      await idcService.revokeAllUserAccess(testAccountId);
 
       const commandCalls = ssoAdminMock.commandCalls(
         DeleteAccountAssignmentCommand,
@@ -391,13 +354,6 @@ describe("Idc service api", () => {
 
     it("should revoke access to all users with ISB User PS", async () => {
       ssoAdminMock.on(DeleteAccountAssignmentCommand).resolves({});
-      ssoAdminMock
-        .on(ListPermissionSetsCommand)
-        .resolves({ PermissionSets: samplePermissionSetArns });
-      ssoAdminMock
-        .on(DescribePermissionSetCommand)
-        .resolvesOnce({ PermissionSet: samplePermissionSetUser })
-        .resolvesOnce({ PermissionSet: samplePermissionSetManager });
       ssoAdminMock.on(ListAccountAssignmentsCommand).resolves({
         AccountAssignments: [
           {
@@ -427,7 +383,7 @@ describe("Idc service api", () => {
         ],
       });
 
-      await idcHelper.revokeAllUserAccess(testAccountId);
+      await idcService.revokeAllUserAccess(testAccountId);
 
       const commandCalls = ssoAdminMock.commandCalls(
         DeleteAccountAssignmentCommand,

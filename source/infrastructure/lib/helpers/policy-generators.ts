@@ -4,7 +4,7 @@
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 import { ArnFormat, Stack } from "aws-cdk-lib";
-import { Effect, Policy, PolicyStatement } from "aws-cdk-lib/aws-iam";
+import { Effect, Policy, PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 
 export function grantIsbDbReadOnly(
@@ -77,6 +77,27 @@ export function grantIsbAppConfigRead(
           environmentId: configEnvironmentId,
           configurationProfileId: configurationProfileId,
         },
+      ],
+    }),
+  );
+}
+
+export function grantIsbSsmParameterRead(
+  role: Role,
+  parameterName: string,
+  accountId?: string,
+) {
+  role.addToPolicy(
+    new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ["ssm:GetParameter"],
+      resources: [
+        Stack.of(role).formatArn({
+          service: "ssm",
+          account: accountId,
+          resource: "parameter",
+          resourceName: parameterName,
+        }),
       ],
     }),
   );

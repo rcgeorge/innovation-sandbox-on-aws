@@ -23,6 +23,12 @@ import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.j
 const IdcConfigSchema = z.object({
   identityStoreId: z.string(),
   ssoInstanceArn: z.string(),
+  adminGroupId: z.string(),
+  managerGroupId: z.string(),
+  userGroupId: z.string(),
+  adminPermissionSetArn: z.string(),
+  managerPermissionSetArn: z.string(),
+  userPermissionSetArn: z.string(),
   solutionVersion: z.string(),
   supportedSchemas: z.string(),
 });
@@ -60,7 +66,7 @@ type SourceStack = "Idc" | "AccountPool" | "Data";
 type SharedJsonParamContext = Context &
   ValidatedEnvironment<SharedJsonParamEnvironment>;
 
-const schemaMap: Record<SourceStack, Zod.ZodObject<any>> = {
+const schemaMap: Record<SourceStack, z.ZodObject<any>> = {
   Idc: IdcConfigSchema,
   AccountPool: AccountPoolConfigSchema,
   Data: DataConfigSchema,
@@ -126,6 +132,12 @@ const onCreateOrUpdate = async (
       //Idc
       identityStoreId: validatedIdcConfig.identityStoreId,
       ssoInstanceArn: validatedIdcConfig.ssoInstanceArn,
+      adminGroupId: validatedIdcConfig.adminGroupId,
+      managerGroupId: validatedIdcConfig.managerGroupId,
+      userGroupId: validatedIdcConfig.userGroupId,
+      adminPermissionSetArn: validatedIdcConfig.adminPermissionSetArn,
+      managerPermissionSetArn: validatedIdcConfig.managerPermissionSetArn,
+      userPermissionSetArn: validatedIdcConfig.userPermissionSetArn,
       idcSolutionVersion: validatedIdcConfig.solutionVersion,
       idcSupportedSchemas: validatedIdcConfig.supportedSchemas,
       //AccountPool
