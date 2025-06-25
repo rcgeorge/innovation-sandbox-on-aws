@@ -109,11 +109,15 @@ export class IsbClients {
     return cachedStepFunctionsClient;
   }
 
-  public static ssm(env: { USER_AGENT_EXTRA: string }): IsbSSMClient {
+  public static ssm(
+    env: { USER_AGENT_EXTRA: string },
+    credentials?: AwsCredentialIdentity | AwsCredentialIdentityProvider,
+  ): IsbSSMClient {
     if (cachedSSMClient == null) {
       cachedSSMClient = tracer.captureAWSv3Client(
         new IsbSSMClient({
           customUserAgent: env.USER_AGENT_EXTRA,
+          credentials,
         }),
       );
     }
