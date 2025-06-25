@@ -124,7 +124,7 @@ export class IsbServices {
   ) {
     return new IdcService({
       namespace: env.ISB_NAMESPACE,
-      ssmClient: IsbClients.ssm(env),
+      ssmClient: IsbClients.ssm(env, credentials),
       ssoAdminClient: IsbClients.ssoAdmin(env, credentials),
       identityStoreClient: IsbClients.identityStore(env, credentials),
     });

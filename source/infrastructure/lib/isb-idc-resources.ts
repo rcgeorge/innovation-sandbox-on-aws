@@ -211,6 +211,8 @@ export class IsbIdcResources {
       },
     );
 
+    ssmParamIdcConfiguration.grantRead(idcRole);
+
     new aws_ram.CfnResourceShare(scope, "IdcConfigParameterShare", {
       name: `Isb-${props.namespace}-IdcConfigShare`,
       principals: [props.hubAccountId],
