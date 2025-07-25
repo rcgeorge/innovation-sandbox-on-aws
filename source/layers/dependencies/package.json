@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-layer-dependencies",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Dependencies - Lambda Layer - Innovation Sandbox on AWS (SO0284)",
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.2.0",
@@ -32,7 +32,7 @@
     "@middy/http-router": "^5.4.5",
     "@middy/http-security-headers": "^5.5.0",
     "@middy/sqs-partial-batch-failure": "^5.5.0",
-    "@node-saml/passport-saml": "^5.0.1",
+    "@node-saml/passport-saml": "^5.1.0",
     "body-parser": "^1.20.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
