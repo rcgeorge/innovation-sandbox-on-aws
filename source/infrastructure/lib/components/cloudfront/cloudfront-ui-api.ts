@@ -1,9 +1,12 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import {
+  Aspects,
+  CfnCondition,
   CfnOutput,
   CfnResource,
   Duration,
+  Fn,
   RemovalPolicy,
   Stack,
   Token,
@@ -12,6 +15,7 @@ import { RestApi as ApiGatewayRestApi } from "aws-cdk-lib/aws-apigateway";
 import {
   AllowedMethods,
   CachePolicy,
+  CfnDistribution,
   Function as CloudFrontFunction,
   FunctionCode as CloudFrontFunctionCode,
   Distribution,
@@ -48,6 +52,7 @@ import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/k
 import { IsbLogGroups } from "@amzn/innovation-sandbox-infrastructure/components/observability/log-groups";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
+import { ConditionAspect } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
 
 export interface CloudFrontUiApiProps {
@@ -59,6 +64,37 @@ export class CloudfrontUiApi extends Construct {
   constructor(scope: Construct, id: string, props: CloudFrontUiApiProps) {
     super(scope, id);
     const kmsKey = IsbKmsKeys.get(scope, props.namespace);
+
+    // Define regions that don't support CloudFront standard access logging
+    const unsupportedLoggingRegions = [
+      "af-south-1", // Africa (Cape Town)
+      "ap-east-1", // Asia Pacific (Hong Kong)
+      "ap-south-2", // Asia Pacific (Hyderabad)
+      "ap-southeast-3", // Asia Pacific (Jakarta)
+      "ap-southeast-4", // Asia Pacific (Melbourne)
+      "ca-west-1", // Canada West (Calgary)
+      "eu-south-1", // Europe (Milan)
+      "eu-south-2", // Europe (Spain)
+      "eu-central-2", // Europe (Zurich)
+      "il-central-1", // Israel (Tel Aviv)
+      "me-south-1", // Middle East (Bahrain)
+      "me-central-1", // Middle East (UAE)
+    ];
+
+    const supportsCloudFrontLogging = new CfnCondition(
+      this,
+      "SupportsCloudFrontLogging",
+      {
+        expression: Fn.conditionNot(
+          Fn.conditionOr(
+            ...unsupportedLoggingRegions.map((region) =>
+              Fn.conditionEquals(Fn.ref("AWS::Region"), region),
+            ),
+          ),
+        ),
+      },
+    );
+
     const feBucket = new Bucket(this, "IsbFrontEndBucket", {
       removalPolicy: isDevMode(scope)
         ? RemovalPolicy.DESTROY
@@ -104,6 +140,11 @@ export class CloudfrontUiApi extends Construct {
         },
       ],
     });
+
+    // Apply condition to logging bucket - only create in supported regions
+    Aspects.of(loggingBucket).add(
+      new ConditionAspect(supportsCloudFrontLogging),
+    );
 
     const oac = new S3OriginAccessControl(
       this,
@@ -272,11 +313,22 @@ export class CloudfrontUiApi extends Construct {
       priceClass: PriceClass.PRICE_CLASS_ALL,
       httpVersion: HttpVersion.HTTP2,
       minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2019,
-      enableLogging: true,
-      logBucket: loggingBucket,
-      logIncludesCookies: true,
-      logFilePrefix: "isb-fe-logs/",
     });
+
+    // Conditionally disable logging in unsupported regions by overriding the entire Logging property
+    const cfnDistribution = distribution.node.defaultChild as CfnDistribution;
+    cfnDistribution.addPropertyOverride(
+      "DistributionConfig.Logging",
+      Fn.conditionIf(
+        supportsCloudFrontLogging.logicalId,
+        {
+          Bucket: loggingBucket.bucketDomainName,
+          IncludeCookies: true,
+          Prefix: "isb-fe-logs/",
+        },
+        Fn.ref("AWS::NoValue"),
+      ),
+    );
 
     new BucketDeployment(this, "DeployIsbFrontEnd", {
       sources: [
