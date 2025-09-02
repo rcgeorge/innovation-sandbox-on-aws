@@ -25,6 +25,8 @@ const layerArns: { [key: string]: string } = {
     "arn:aws:lambda:ca-west-1:436199621743:layer:AWS-AppConfig-Extension-Arm64:47",
   "eu-central-1":
     "arn:aws:lambda:eu-central-1:066940009817:layer:AWS-AppConfig-Extension-Arm64:132",
+  "eu-central-2":
+    "arn:aws:lambda:eu-central-2:758369105281:layer:AWS-AppConfig-Extension-Arm64:64",
   "eu-west-1":
     "arn:aws:lambda:eu-west-1:434848589818:layer:AWS-AppConfig-Extension-Arm64:127",
   "eu-west-2":

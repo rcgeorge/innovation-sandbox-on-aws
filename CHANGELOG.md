@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2025-09-02
+
+### Added
+
+- Conditional deployment of CloudFront access logs to support regions that don't support standard logging (legacy)
+- Missing AppConfig Lambda layer extension ARN for eu-central-2 region
+
+### Fixed
+
+- Deployment failures in regions that don't support CloudFront standard access logging (legacy)
+
 ## [1.0.3] - 2025-07-25
 
 ### Security

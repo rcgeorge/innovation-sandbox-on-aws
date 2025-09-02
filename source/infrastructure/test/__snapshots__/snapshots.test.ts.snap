@@ -165,13 +165,13 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.0.3",
+        "publicEcrTag": "v1.0.4",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "sendAnonymizedUsageMetrics": "true",
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.0.3",
+        "version": "v1.0.4",
       },
     },
   },
@@ -537,7 +537,7 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "IdcConfigurer",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -1714,13 +1714,13 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.0.3",
+        "publicEcrTag": "v1.0.4",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "sendAnonymizedUsageMetrics": "true",
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.0.3",
+        "version": "v1.0.4",
       },
     },
   },
@@ -2040,7 +2040,7 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -3953,6 +3953,118 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         },
       ],
     },
+    "CloudFrontUiApiSupportsCloudFrontLoggingF1020F6E": {
+      "Fn::Not": [
+        {
+          "Fn::Or": [
+            {
+              "Fn::Or": [
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "af-south-1",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "ap-east-1",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "ap-south-2",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "ap-southeast-3",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "ap-southeast-4",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "ca-west-1",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "eu-south-1",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "eu-south-2",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "eu-central-2",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "il-central-1",
+                  ],
+                },
+              ],
+            },
+            {
+              "Fn::Or": [
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "me-south-1",
+                  ],
+                },
+                {
+                  "Fn::Equals": [
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    "me-central-1",
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
     "SendAnonymizedMetricsCondition": {
       "Fn::Equals": [
         {
@@ -4029,6 +4141,9 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
       },
       "eu-central-1": {
         "arn": "arn:aws:lambda:eu-central-1:066940009817:layer:AWS-AppConfig-Extension-Arm64:132",
+      },
+      "eu-central-2": {
+        "arn": "arn:aws:lambda:eu-central-2:758369105281:layer:AWS-AppConfig-Extension-Arm64:64",
       },
       "eu-north-1": {
         "arn": "arn:aws:lambda:eu-north-1:646970417810:layer:AWS-AppConfig-Extension-Arm64:118",
@@ -4215,13 +4330,13 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.0.3",
+        "publicEcrTag": "v1.0.4",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "sendAnonymizedUsageMetrics": "true",
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.0.3",
+        "version": "v1.0.4",
       },
     },
   },
@@ -5094,7 +5209,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -6027,7 +6142,7 @@ phases:
                 "sandboxOuId",
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -6732,7 +6847,7 @@ phases:
                 "sandboxOuId",
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -7296,7 +7411,7 @@ phases:
                 },
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -7577,7 +7692,7 @@ phases:
                 },
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -8089,7 +8204,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -8473,14 +8588,22 @@ phases:
           "HttpVersion": "http2",
           "IPV6Enabled": true,
           "Logging": {
-            "Bucket": {
-              "Fn::GetAtt": [
-                "CloudFrontUiApiIsbFrontEndAccessLogsBucketB8ACDB31",
-                "RegionalDomainName",
-              ],
-            },
-            "IncludeCookies": true,
-            "Prefix": "isb-fe-logs/",
+            "Fn::If": [
+              "CloudFrontUiApiSupportsCloudFrontLoggingF1020F6E",
+              {
+                "Bucket": {
+                  "Fn::GetAtt": [
+                    "CloudFrontUiApiIsbFrontEndAccessLogsBucketB8ACDB31",
+                    "DomainName",
+                  ],
+                },
+                "IncludeCookies": true,
+                "Prefix": "isb-fe-logs/",
+              },
+              {
+                "Ref": "AWS::NoValue",
+              },
+            ],
           },
           "Origins": [
             {
@@ -8664,6 +8787,7 @@ phases:
       "Type": "AWS::CloudFront::ResponseHeadersPolicy",
     },
     "CloudFrontUiApiIsbFrontEndAccessLogsBucketB8ACDB31": {
+      "Condition": "CloudFrontUiApiSupportsCloudFrontLoggingF1020F6E",
       "DeletionPolicy": "Retain",
       "Metadata": {
         "guard": {
@@ -8754,6 +8878,7 @@ phases:
       "UpdateReplacePolicy": "Retain",
     },
     "CloudFrontUiApiIsbFrontEndAccessLogsBucketPolicyC5EC85B6": {
+      "Condition": "CloudFrontUiApiSupportsCloudFrontLoggingF1020F6E",
       "Properties": {
         "Bucket": {
           "Ref": "CloudFrontUiApiIsbFrontEndAccessLogsBucketB8ACDB31",
@@ -9126,7 +9251,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -9403,7 +9528,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -10011,7 +10136,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -10492,7 +10617,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -15239,7 +15364,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -15761,7 +15886,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -16071,7 +16196,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -16460,7 +16585,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -16926,7 +17051,7 @@ phases:
                 "sandboxOuId",
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -17465,7 +17590,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -18313,7 +18438,7 @@ fields @timestamp, @message
                 "sandboxOuId",
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -19025,7 +19150,7 @@ fields @timestamp, @message
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "SsoHandler",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.3",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.0.4",
           },
         },
         "FunctionName": {
@@ -19322,13 +19447,13 @@ exports[`IsbDataStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.0.3",
+        "publicEcrTag": "v1.0.4",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "sendAnonymizedUsageMetrics": "true",
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.0.3",
+        "version": "v1.0.4",
       },
     },
   },
