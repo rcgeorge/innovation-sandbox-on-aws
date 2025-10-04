@@ -19,12 +19,53 @@ const envExamplePath = path.join(__dirname, '..', '.env.example');
 let existingEnv = {};
 if (fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, 'utf-8');
-  envContent.split('\n').forEach(line => {
+  // Split by newline and handle both Windows (CRLF) and Unix (LF) line endings
+  envContent.split(/\r?\n/).forEach(line => {
     const match = line.match(/^([^#=]+)=(.*)$/);
     if (match) {
       existingEnv[match[1].trim()] = match[2].trim();
     }
   });
+}
+
+// Check if existing .env has valid configuration
+function hasValidConfiguration() {
+  if (!fs.existsSync(envPath)) {
+    return false;
+  }
+
+  // Check for required fields with actual values (not default placeholders from .env.example)
+  // A valid config should have:
+  // 1. Real account ID (not 000000000000)
+  // 2. A namespace (can be myisb or anything else)
+  // 3. Organization root ID or Parent OU ID
+  // 4. Identity Store ID
+  // 5. SSO Instance ARN
+
+  const requiredFields = {
+    'HUB_ACCOUNT_ID': '000000000000',
+    'PARENT_OU_ID': 'ou-abcd-abcd1234',
+    'IDENTITY_STORE_ID': 'd-0000000000',
+    'SSO_INSTANCE_ARN': 'arn:aws:sso:::instance/ssoins-0000000000000000'
+  };
+
+  for (const [field, placeholder] of Object.entries(requiredFields)) {
+    if (!existingEnv[field]) {
+      return false;
+    }
+    // Remove quotes if present for comparison
+    const cleanValue = existingEnv[field].replace(/^["']|["']$/g, '');
+    // Check if it's still the placeholder value from .env.example
+    if (cleanValue === placeholder) {
+      return false;
+    }
+    // Special check for fields that might have all zeros
+    if (cleanValue.includes('0000000000') && placeholder.includes('0000000000')) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // Function to get current AWS account ID
@@ -139,50 +180,73 @@ function getOrganizationRootId() {
   }
 }
 
-console.log('\n==============================================');
-console.log('Innovation Sandbox on AWS - Configuration Wizard');
-console.log('==============================================\n');
+async function main() {
+  console.log('\n==============================================');
+  console.log('Innovation Sandbox on AWS - Configuration Wizard');
+  console.log('==============================================\n');
 
-if (Object.keys(existingEnv).length > 0) {
-  console.log('ℹ️  Existing .env file found. Current values will be shown as defaults.\n');
-}
+  // Check if there's already a valid configuration
+  if (hasValidConfiguration()) {
+    console.log('✅ Existing configuration detected in .env file\n');
 
-// Detect AWS environment information
-console.log('🔍 Detecting AWS environment configuration...\n');
+    const { wantToEdit } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'wantToEdit',
+        message: 'Do you want to edit the existing configuration values?',
+        default: false
+      }
+    ]);
 
-const currentAccountId = getCurrentAwsAccountId();
-const currentRegion = getCurrentAwsRegion();
-const identityCenter = getIdentityCenterInfo();
-const orgRootId = getOrganizationRootId();
+    if (!wantToEdit) {
+      // User doesn't want to edit - verify and deploy ECR if configured
+      await verifyAndDeployECR();
+      return;
+    }
+    // If user wants to edit, continue with the wizard showing existing values as defaults
+    console.log('\n📝 Continuing with configuration wizard. Existing values will be shown as defaults.\n');
+  }
 
-if (currentAccountId) {
-  console.log(`✓ AWS Account: ${currentAccountId}`);
-} else {
-  console.log('⚠️  AWS Account: Not detected');
-}
+  if (Object.keys(existingEnv).length > 0) {
+    console.log('ℹ️  Existing .env file found. Current values will be shown as defaults.\n');
+  }
 
-if (currentRegion) {
-  console.log(`✓ AWS Region: ${currentRegion}`);
-} else {
-  console.log('⚠️  AWS Region: Not detected');
-}
+  // Detect AWS environment information
+  console.log('🔍 Detecting AWS environment configuration...\n');
 
-if (identityCenter.identityStoreId) {
-  const regionInfo = identityCenter.region ? ` (in ${identityCenter.region})` : '';
-  console.log(`✓ Identity Center: ${identityCenter.identityStoreId}${regionInfo}`);
-} else {
-  console.log('⚠️  Identity Center: Not detected');
-}
+  const currentAccountId = getCurrentAwsAccountId();
+  const currentRegion = getCurrentAwsRegion();
+  const identityCenter = getIdentityCenterInfo();
+  const orgRootId = getOrganizationRootId();
 
-if (orgRootId) {
-  console.log(`✓ Organization Root: ${orgRootId}`);
-} else {
-  console.log('⚠️  Organization Root: Not detected');
-}
+  if (currentAccountId) {
+    console.log(`✓ AWS Account: ${currentAccountId}`);
+  } else {
+    console.log('⚠️  AWS Account: Not detected');
+  }
 
-console.log('');
+  if (currentRegion) {
+    console.log(`✓ AWS Region: ${currentRegion}`);
+  } else {
+    console.log('⚠️  AWS Region: Not detected');
+  }
 
-const questions = [
+  if (identityCenter.identityStoreId) {
+    const regionInfo = identityCenter.region ? ` (in ${identityCenter.region})` : '';
+    console.log(`✓ Identity Center: ${identityCenter.identityStoreId}${regionInfo}`);
+  } else {
+    console.log('⚠️  Identity Center: Not detected');
+  }
+
+  if (orgRootId) {
+    console.log(`✓ Organization Root: ${orgRootId}`);
+  } else {
+    console.log('⚠️  Organization Root: Not detected');
+  }
+
+  console.log('');
+
+  const questions = [
   {
     type: 'list',
     name: 'DEPLOYMENT_TYPE',
@@ -410,12 +474,6 @@ const questions = [
     }
   },
   {
-    type: 'confirm',
-    name: 'ACCEPT_TERMS',
-    message: 'Do you accept the Solution Terms of Use? (Required to deploy Compute stack)',
-    default: existingEnv.ACCEPT_SOLUTION_TERMS_OF_USE === 'Accept'
-  },
-  {
     type: 'input',
     name: 'ADMIN_GROUP_NAME',
     message: 'Admin group name (leave empty to use default <namespace>_IsbAdmins):',
@@ -446,14 +504,17 @@ const questions = [
   {
     type: 'confirm',
     name: 'CONFIGURE_PRIVATE_ECR',
-    message: 'Do you want to configure a private ECR repository for the account cleaner image?',
+    message: 'Do you want to use a private ECR repository for the account cleaner image? (can auto-create)',
     default: !!(existingEnv.PRIVATE_ECR_REPO)
   },
   {
     type: 'input',
     name: 'PRIVATE_ECR_REPO',
-    message: 'Private ECR repository name:',
-    default: existingEnv.PRIVATE_ECR_REPO || '',
+    message: 'Private ECR repository name for account cleaner:',
+    default: (answers) => {
+      if (existingEnv.PRIVATE_ECR_REPO) return existingEnv.PRIVATE_ECR_REPO;
+      return `${answers.NAMESPACE}-account-cleaner`;
+    },
     when: (answers) => answers.CONFIGURE_PRIVATE_ECR,
     validate: (input) => {
       if (!input || input.trim() === '') {
@@ -466,7 +527,11 @@ const questions = [
     type: 'input',
     name: 'PRIVATE_ECR_REPO_REGION',
     message: 'Private ECR repository region:',
-    default: existingEnv.PRIVATE_ECR_REPO_REGION || 'us-east-1',
+    default: (answers) => {
+      if (existingEnv.PRIVATE_ECR_REPO_REGION) return existingEnv.PRIVATE_ECR_REPO_REGION;
+      if (currentRegion) return currentRegion;
+      return 'us-east-1';
+    },
     when: (answers) => answers.CONFIGURE_PRIVATE_ECR,
     validate: (input) => {
       // Support both commercial regions (us-east-1) and GovCloud regions (us-gov-east-1)
@@ -475,6 +540,56 @@ const questions = [
       }
       return true;
     }
+  },
+  {
+    type: 'confirm',
+    name: 'CREATE_ECR_REPO',
+    message: 'Do you want to automatically create the ECR repository if it doesn\'t exist?',
+    when: (answers) => answers.CONFIGURE_PRIVATE_ECR,
+    default: true
+  },
+  {
+    type: 'confirm',
+    name: 'BUILD_AND_PUSH_IMAGE',
+    message: 'Do you want to build and push the account cleaner Docker image now? (requires Docker running)',
+    when: (answers) => answers.CONFIGURE_PRIVATE_ECR,
+    default: true
+  },
+  {
+    type: 'confirm',
+    name: 'CONFIGURE_FRONTEND_ECR',
+    message: 'Do you want to configure a private ECR repository for the frontend image? (for ECS deployment)',
+    default: false
+  },
+  {
+    type: 'input',
+    name: 'PRIVATE_ECR_FRONTEND_REPO',
+    message: 'Private ECR frontend repository name:',
+    default: (answers) => {
+      if (existingEnv.PRIVATE_ECR_FRONTEND_REPO) return existingEnv.PRIVATE_ECR_FRONTEND_REPO;
+      return `${answers.NAMESPACE}-frontend`;
+    },
+    when: (answers) => answers.CONFIGURE_FRONTEND_ECR,
+    validate: (input) => {
+      if (!input || input.trim() === '') {
+        return 'Repository name is required when using private ECR for frontend';
+      }
+      return true;
+    }
+  },
+  {
+    type: 'confirm',
+    name: 'CREATE_FRONTEND_ECR_REPO',
+    message: 'Do you want to automatically create the frontend ECR repository if it doesn\'t exist?',
+    when: (answers) => answers.CONFIGURE_FRONTEND_ECR,
+    default: true
+  },
+  {
+    type: 'confirm',
+    name: 'BUILD_AND_PUSH_FRONTEND_IMAGE',
+    message: 'Do you want to build and push the frontend Docker image now? (requires Docker running)',
+    when: (answers) => answers.CONFIGURE_FRONTEND_ECR,
+    default: true
   },
   {
     type: 'confirm',
@@ -497,10 +612,15 @@ const questions = [
       }
       return true;
     }
+  },
+  {
+    type: 'confirm',
+    name: 'ACCEPT_TERMS',
+    message: 'Do you accept the Solution Terms of Use? (Required to deploy Compute stack)',
+    default: existingEnv.ACCEPT_SOLUTION_TERMS_OF_USE === 'Accept'
   }
 ];
 
-async function main() {
   try {
     const answers = await inquirer.prompt(questions);
 
@@ -542,6 +662,11 @@ async function main() {
       envContent = envContent.replace(/^# PRIVATE_ECR_REPO_REGION=.*/m, `PRIVATE_ECR_REPO_REGION="${answers.PRIVATE_ECR_REPO_REGION}"`);
     }
 
+    // Handle optional frontend ECR configuration
+    if (answers.CONFIGURE_FRONTEND_ECR) {
+      envContent = envContent.replace(/^# PRIVATE_ECR_FRONTEND_REPO=.*/m, `PRIVATE_ECR_FRONTEND_REPO="${answers.PRIVATE_ECR_FRONTEND_REPO}"`);
+    }
+
     // Handle optional custom nuke config
     if (answers.CONFIGURE_CUSTOM_NUKE) {
       envContent = envContent.replace(/^# NUKE_CONFIG_FILE_PATH=.*/m, `NUKE_CONFIG_FILE_PATH="${answers.NUKE_CONFIG_FILE_PATH}"`);
@@ -551,7 +676,122 @@ async function main() {
     fs.writeFileSync(envPath, envContent);
 
     console.log('\n✅ Configuration saved to .env file!\n');
-    console.log('Next steps:');
+
+    // Handle ECR repository creation and Docker image build/push
+    if (answers.CONFIGURE_PRIVATE_ECR) {
+      const ecrRegion = answers.PRIVATE_ECR_REPO_REGION;
+      const ecrRepoName = answers.PRIVATE_ECR_REPO;
+
+      // Create ECR repository if requested
+      if (answers.CREATE_ECR_REPO) {
+        console.log(`\n🔨 Creating ECR repository "${ecrRepoName}" in ${ecrRegion}...`);
+        try {
+          // Check if repo already exists
+          execSync(`aws ecr describe-repositories --repository-names ${ecrRepoName} --region ${ecrRegion}`, {
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'pipe']
+          });
+          console.log(`✓ ECR repository "${ecrRepoName}" already exists`);
+        } catch (error) {
+          // Repository doesn't exist, create it
+          try {
+            execSync(`aws ecr create-repository --repository-name ${ecrRepoName} --region ${ecrRegion} --image-scanning-configuration scanOnPush=true`, {
+              encoding: 'utf-8',
+              stdio: 'inherit'
+            });
+            console.log(`✓ ECR repository "${ecrRepoName}" created successfully`);
+          } catch (createError) {
+            console.error(`❌ Failed to create ECR repository: ${createError.message}`);
+          }
+        }
+      }
+
+      // Build and push Docker image if requested
+      if (answers.BUILD_AND_PUSH_IMAGE) {
+        console.log('\n🐳 Building and pushing Docker image...');
+        console.log('This may take a few minutes...\n');
+
+        try {
+          // Check if Docker is running
+          execSync('docker info', { stdio: 'pipe' });
+
+          // Run the docker build and push command
+          execSync('npm run docker:build-and-push', {
+            encoding: 'utf-8',
+            stdio: 'inherit',
+            cwd: path.join(__dirname, '..'),
+            env: process.env
+          });
+          console.log('\n✓ Docker image built and pushed successfully');
+        } catch (dockerError) {
+          if (dockerError.message.includes('docker info')) {
+            console.error('\n❌ Docker is not running. Please start Docker and run: npm run docker:build-and-push');
+          } else {
+            console.error(`\n❌ Failed to build/push Docker image: ${dockerError.message}`);
+            console.error('You can manually run: npm run docker:build-and-push');
+          }
+        }
+      }
+    }
+
+    // Handle frontend ECR repository creation and Docker image build/push
+    if (answers.CONFIGURE_FRONTEND_ECR) {
+      const ecrRegion = answers.PRIVATE_ECR_REPO_REGION || currentRegion || 'us-east-1';
+      const frontendEcrRepoName = answers.PRIVATE_ECR_FRONTEND_REPO;
+
+      // Create frontend ECR repository if requested
+      if (answers.CREATE_FRONTEND_ECR_REPO) {
+        console.log(`\n🔨 Creating frontend ECR repository "${frontendEcrRepoName}" in ${ecrRegion}...`);
+        try {
+          // Check if repo already exists
+          execSync(`aws ecr describe-repositories --repository-names ${frontendEcrRepoName} --region ${ecrRegion}`, {
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'pipe']
+          });
+          console.log(`✓ Frontend ECR repository "${frontendEcrRepoName}" already exists`);
+        } catch (error) {
+          // Repository doesn't exist, create it
+          try {
+            execSync(`aws ecr create-repository --repository-name ${frontendEcrRepoName} --region ${ecrRegion} --image-scanning-configuration scanOnPush=true`, {
+              encoding: 'utf-8',
+              stdio: 'inherit'
+            });
+            console.log(`✓ Frontend ECR repository "${frontendEcrRepoName}" created successfully`);
+          } catch (createError) {
+            console.error(`❌ Failed to create frontend ECR repository: ${createError.message}`);
+          }
+        }
+      }
+
+      // Build and push frontend Docker image if requested
+      if (answers.BUILD_AND_PUSH_FRONTEND_IMAGE) {
+        console.log('\n🐳 Building and pushing frontend Docker image...');
+        console.log('This may take a few minutes...\n');
+
+        try {
+          // Check if Docker is running
+          execSync('docker info', { stdio: 'pipe' });
+
+          // Run the docker build and push command for frontend
+          execSync('npm run docker:frontend:build-and-push', {
+            encoding: 'utf-8',
+            stdio: 'inherit',
+            cwd: path.join(__dirname, '..'),
+            env: process.env
+          });
+          console.log('\n✓ Frontend Docker image built and pushed successfully');
+        } catch (dockerError) {
+          if (dockerError.message.includes('docker info')) {
+            console.error('\n❌ Docker is not running. Please start Docker and run: npm run docker:frontend:build-and-push');
+          } else {
+            console.error(`\n❌ Failed to build/push frontend Docker image: ${dockerError.message}`);
+            console.error('You can manually run: npm run docker:frontend:build-and-push');
+          }
+        }
+      }
+    }
+
+    console.log('\nNext steps:');
     console.log('  1. Review the .env file and make any additional adjustments');
     console.log('  2. Ensure you have AWS CLI configured with appropriate credentials');
     if (answers.DEPLOYMENT_TYPE === 'single') {
@@ -572,6 +812,180 @@ async function main() {
     }
     process.exit(1);
   }
+}
+
+// Function to verify and deploy ECR repositories and images
+async function verifyAndDeployECR() {
+  console.log('\n🔍 Checking ECR configuration...\n');
+
+  // Helper function to clean values (remove quotes)
+  const cleanValue = (val) => val ? val.replace(/^["']|["']$/g, '') : val;
+
+  const ecrRepoName = cleanValue(existingEnv.PRIVATE_ECR_REPO) || `${cleanValue(existingEnv.NAMESPACE)}-account-cleaner`;
+  const frontendEcrRepoName = cleanValue(existingEnv.PRIVATE_ECR_FRONTEND_REPO) || `${cleanValue(existingEnv.NAMESPACE)}-frontend`;
+  const ecrRegion = cleanValue(existingEnv.PRIVATE_ECR_REPO_REGION) || getCurrentAwsRegion() || 'us-east-1';
+  const hubAccountId = cleanValue(existingEnv.HUB_ACCOUNT_ID);
+
+  let needsAccountCleaner = false;
+  let needsFrontend = false;
+
+  // Check if account cleaner ECR repo exists and has images
+  if (existingEnv.PRIVATE_ECR_REPO && existingEnv.PRIVATE_ECR_REPO.trim() !== '') {
+    console.log(`📦 Checking account cleaner ECR repository: ${ecrRepoName}`);
+    try {
+      execSync(`aws ecr describe-repositories --repository-names ${ecrRepoName} --region ${ecrRegion}`, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      console.log(`  ✓ Repository exists`);
+
+      // Check if there are images with 'latest' tag
+      try {
+        const images = execSync(`aws ecr describe-images --repository-name ${ecrRepoName} --region ${ecrRegion} --image-ids imageTag=latest`, {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+        // If the command succeeds and returns output, the image exists
+        if (images && images.trim().length > 0) {
+          console.log(`  ✓ Image with 'latest' tag found\n`);
+        } else {
+          console.log(`  ⚠️  No 'latest' image found\n`);
+          needsAccountCleaner = true;
+        }
+      } catch (error) {
+        console.log(`  ⚠️  No 'latest' image found\n`);
+        needsAccountCleaner = true;
+      }
+    } catch (error) {
+      console.log(`  ❌ Repository does not exist\n`);
+      needsAccountCleaner = true;
+    }
+  }
+
+  // Check if frontend ECR repo exists and has images
+  if (existingEnv.PRIVATE_ECR_FRONTEND_REPO && existingEnv.PRIVATE_ECR_FRONTEND_REPO.trim() !== '') {
+    console.log(`📦 Checking frontend ECR repository: ${frontendEcrRepoName}`);
+    try {
+      execSync(`aws ecr describe-repositories --repository-names ${frontendEcrRepoName} --region ${ecrRegion}`, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      console.log(`  ✓ Repository exists`);
+
+      // Check if there are images with 'latest' tag
+      try {
+        const images = execSync(`aws ecr describe-images --repository-name ${frontendEcrRepoName} --region ${ecrRegion} --image-ids imageTag=latest`, {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+        // If the command succeeds and returns output, the image exists
+        if (images && images.trim().length > 0) {
+          console.log(`  ✓ Image with 'latest' tag found\n`);
+        } else {
+          console.log(`  ⚠️  No 'latest' image found\n`);
+          needsFrontend = true;
+        }
+      } catch (error) {
+        console.log(`  ⚠️  No 'latest' image found\n`);
+        needsFrontend = true;
+      }
+    } catch (error) {
+      console.log(`  ❌ Repository does not exist\n`);
+      needsFrontend = true;
+    }
+  }
+
+  // If everything is good, exit
+  if (!needsAccountCleaner && !needsFrontend) {
+    console.log('✅ All ECR repositories and images are configured correctly!\n');
+    return;
+  }
+
+  // Ask user if they want to create/deploy missing resources
+  const { shouldDeploy } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'shouldDeploy',
+      message: 'Some ECR repositories or images are missing. Would you like to create/deploy them now?',
+      default: true
+    }
+  ]);
+
+  if (!shouldDeploy) {
+    console.log('\n⚠️  Skipping ECR deployment. You can manually run the following commands:');
+    if (needsAccountCleaner) {
+      console.log('  - npm run docker:build-and-push');
+    }
+    if (needsFrontend) {
+      console.log('  - npm run docker:frontend:build-and-push');
+    }
+    console.log('');
+    return;
+  }
+
+  // Deploy account cleaner if needed
+  if (needsAccountCleaner) {
+    console.log('\n🔨 Creating/deploying account cleaner ECR repository and image...');
+    try {
+      // Create repo if it doesn't exist
+      try {
+        execSync(`aws ecr describe-repositories --repository-names ${ecrRepoName} --region ${ecrRegion}`, {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+      } catch (error) {
+        execSync(`aws ecr create-repository --repository-name ${ecrRepoName} --region ${ecrRegion} --image-scanning-configuration scanOnPush=true`, {
+          encoding: 'utf-8',
+          stdio: 'inherit'
+        });
+        console.log(`✓ ECR repository "${ecrRepoName}" created successfully`);
+      }
+
+      // Build and push image
+      console.log('\n🐳 Building and pushing Docker image...');
+      console.log('This may take a few minutes...\n');
+      execSync('npm run docker:build-and-push', {
+        encoding: 'utf-8',
+        stdio: 'inherit'
+      });
+      console.log('\n✓ Docker image built and pushed successfully');
+    } catch (error) {
+      console.error(`\n❌ Failed to deploy account cleaner: ${error.message}`);
+    }
+  }
+
+  // Deploy frontend if needed
+  if (needsFrontend) {
+    console.log('\n🔨 Creating/deploying frontend ECR repository and image...');
+    try {
+      // Create repo if it doesn't exist
+      try {
+        execSync(`aws ecr describe-repositories --repository-names ${frontendEcrRepoName} --region ${ecrRegion}`, {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+      } catch (error) {
+        execSync(`aws ecr create-repository --repository-name ${frontendEcrRepoName} --region ${ecrRegion} --image-scanning-configuration scanOnPush=true`, {
+          encoding: 'utf-8',
+          stdio: 'inherit'
+        });
+        console.log(`✓ Frontend ECR repository "${frontendEcrRepoName}" created successfully`);
+      }
+
+      // Build and push image
+      console.log('\n🐳 Building and pushing frontend Docker image...');
+      console.log('This may take a few minutes...\n');
+      execSync('npm run docker:frontend:build-and-push', {
+        encoding: 'utf-8',
+        stdio: 'inherit'
+      });
+      console.log('\n✓ Frontend Docker image built and pushed successfully');
+    } catch (error) {
+      console.error(`\n❌ Failed to deploy frontend: ${error.message}`);
+    }
+  }
+
+  console.log('\n✅ ECR verification and deployment complete!\n');
 }
 
 main();

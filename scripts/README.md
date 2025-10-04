@@ -17,16 +17,19 @@ npm run configure
 - **Auto-detection of AWS Environment**:
   - Current AWS account ID (via `aws sts get-caller-identity`)
   - Configured AWS region (via `aws configure get region` or environment variables)
-  - IAM Identity Center information (via `aws sso-admin list-instances`)
+  - IAM Identity Center information (via `aws sso-admin list-instances` across multiple regions)
   - AWS Organizations root ID (via `aws organizations list-roots`)
 - **Single vs Multi-Account**: Choose between single-account (all stacks in one account) or multi-account deployment
 - **Smart defaults**: Uses detected values to pre-populate configuration fields
+- **Private ECR Automation**: Optionally creates ECR repository and builds/pushes Docker image automatically
 - Prompts for all required environment variables with validation
 - Validates inputs (AWS account IDs, region formats, OU IDs, etc.)
 - Shows existing values as defaults when reconfiguring
 - Handles optional configuration (private ECR, custom nuke config, deployment mode)
 - Generates a properly formatted `.env` file
 - Provides deployment-specific next steps
+- **Multi-region IDC detection**: Automatically searches common regions for IAM Identity Center if not found in current region
+- **GovCloud Support**: Validates and supports both commercial and GovCloud regions/ARNs
 
 **Dependencies:**
 - `inquirer` - For interactive CLI prompts

@@ -175,23 +175,56 @@ npm run e2e:slow
 
 ## Using Private ECR Repository
 
-For development purposes it may be useful to use a custom ECR image to test updates to AWS Nuke or just host the image in your account.
+The solution supports using private ECR repositories for hosting Docker images. This is useful for:
+- Testing custom AWS Nuke versions (account cleaner)
+- Deploying frontend to ECS instead of CloudFront (e.g., in GovCloud where CloudFront is unavailable)
+- Hosting images in your own account for security/compliance requirements
+
+### Option 1: Automated Setup via Configuration Wizard (Recommended)
+
+The `npm run configure` wizard can automatically:
+- Create ECR repositories in your specified region
+- Build Docker images
+- Push images to your private ECR repositories
+
+The wizard will prompt for:
+1. **Account Cleaner ECR** - For hosting the AWS Nuke container (CodeBuild)
+2. **Frontend ECR** (Optional) - For hosting the frontend container (future ECS deployment)
+
+When prompted, answer yes and follow the prompts. The wizard will handle everything automatically if you have Docker running.
+
+### Option 2: Manual Setup
 
 > **Note:** Make sure you have the docker engine installed and running on your machine to perform the steps in this section.
 
-Follow these steps to configure deployment to use a private ECR image:
+Follow these steps to manually configure deployment to use private ECR images:
 
-1. In the account and region the compute stack is deployed into, create a new private ecr repository. You can name it whatever you like but we suggest something like `innovation-sandbox`.
-1. Configure your `.env` file with the `PRIVATE_ECR_REPO` and `PRIVATE_ECR_REPO_REGION` environment variables. This should be the region and name for the private repo you just created.
-1. From the root of the innovation sandbox repo run the following command:
+**For Account Cleaner:**
+
+1. In the Hub account and desired region, create a new private ECR repository (e.g., `innovation-sandbox-account-cleaner`)
+2. Configure your `.env` file with `PRIVATE_ECR_REPO` and `PRIVATE_ECR_REPO_REGION`
+3. Build and push the account cleaner image:
    ```shell
    npm run docker:build-and-push
    ```
-   This will build the dockerfile located at `source/infrastructure/components/account-cleaner/Dockerfile` and push it to the ECR repo configured in your .env file.
-1. If you have already deployed the solution you will need to deploy the compute stack again to have the solution use the private ecr repo. To do that run the following command:
+   This builds the Dockerfile at `source/infrastructure/lib/components/account-cleaner/Dockerfile`
+
+**For Frontend (Optional - for ECS deployment):**
+
+1. In the Hub account and desired region, create a new private ECR repository (e.g., `innovation-sandbox-frontend`)
+2. Configure your `.env` file with `PRIVATE_ECR_FRONTEND_REPO`
+3. Build and push the frontend image:
    ```shell
-   npm run deploy:compute
+   npm run docker:frontend:build-and-push
    ```
+   This builds the Dockerfile at `source/frontend/Dockerfile`
+
+**Deploy Changes:**
+
+If you have already deployed the solution, redeploy the compute stack to use the private ECR repos:
+```shell
+npm run deploy:compute
+```
 
 ## Uninstalling the Solution
 
