@@ -11,7 +11,11 @@ import { IsbDataStack } from "@amzn/innovation-sandbox-infrastructure/isb-data-s
 import { IsbIdcStack } from "@amzn/innovation-sandbox-infrastructure/isb-idc-stack";
 import { SolutionsEngineeringSynthesizer } from "@amzn/innovation-sandbox-infrastructure/stack-synthesizers/solutions-engineering-synthesizer";
 
-const app = new cdk.App();
+const app = new cdk.App({
+  // Disable CDK metadata for GovCloud compatibility
+  // AWS::CDK::Metadata resource type is not supported in GovCloud
+  analyticsReporting: false,
+});
 
 const context = getSolutionContext(app.node);
 

@@ -298,17 +298,29 @@ export class IsbAccountPoolResources {
       },
     );
 
+    // Create RAM permission ARN with correct partition (aws or aws-us-gov)
+    const ramPermissionArn = Stack.of(scope).formatArn({
+      service: "ram",
+      region: "",
+      account: "aws",
+      resource: "permission",
+      resourceName: "AWSRAMDefaultPermissionSSMParameterReadOnly",
+      arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+    });
+
     new aws_ram.CfnResourceShare(scope, "AccountPoolConfigParameterShare", {
       name: `Isb-${props.namespace}-AccountPoolConfigShare`,
       principals: [props.hubAccountId],
       resourceArns: [ssmParamAccountPoolConfiguration.parameterArn],
       allowExternalPrincipals: false,
-      permissionArns: [
-        "arn:aws:ram::aws:permission/AWSRAMDefaultPermissionSSMParameterReadOnly",
-      ],
+      permissionArns: [ramPermissionArn],
     });
     const outdir = App.of(scope)!.outdir;
-    const sandboxAccountStackApp = new App({ outdir });
+    const sandboxAccountStackApp = new App({
+      outdir,
+      // Disable CDK metadata for GovCloud compatibility
+      analyticsReporting: false,
+    });
     const context = getSolutionContext(sandboxAccountStackApp.node);
     const sandboxAccountStack = new IsbSandboxAccountStack(
       sandboxAccountStackApp,
