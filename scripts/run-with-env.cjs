@@ -31,7 +31,8 @@ let commandString = args.join(' ');
 // Replace environment variable placeholders with actual values
 // This handles both $VAR and ${VAR} syntax
 commandString = commandString.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (match, varName) => {
-  return process.env[varName] || match;
+  // Use empty string if env var is defined but empty, otherwise keep original if undefined
+  return varName in process.env ? (process.env[varName] || '') : match;
 });
 
 // Execute command with environment variables using shell
