@@ -4,6 +4,7 @@ import { Aws, aws_iam, Duration, Token } from "aws-cdk-lib";
 import {
   RestApi as ApiGatewayRestApi,
   AuthorizationType,
+  EndpointType,
   IdentitySource,
   LogGroupLogDestination,
   RequestAuthorizer,
@@ -42,6 +43,7 @@ export interface RestApiProps {
   orgMgtAccountId: string;
   isbEventBus: EventBus;
   allowListedCidr: string[];
+  isGovCloud?: boolean;
 }
 
 export class RestApi extends ApiGatewayRestApi {
@@ -108,8 +110,14 @@ export class RestApi extends ApiGatewayRestApi {
       resultsCacheTtl: Duration.minutes(5),
     });
 
+    // Use REGIONAL endpoint for GovCloud, EDGE for commercial regions
+    const endpointType = props.isGovCloud ? EndpointType.REGIONAL : EndpointType.EDGE;
+
     super(scope, id, {
       description: "Innovation Sandbox on AWS Rest API",
+      endpointConfiguration: {
+        types: [endpointType],
+      },
       deployOptions: {
         accessLogDestination: new LogGroupLogDestination(
           IsbComputeResources.globalLogGroup,

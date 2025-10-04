@@ -9,6 +9,7 @@ import {
   ParameterWithLabel,
   YesNoParameter,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
+import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { NamespaceParam } from "@amzn/innovation-sandbox-infrastructure/helpers/namespace-param";
 import {
   getSharedSsmParamValues,
@@ -98,12 +99,16 @@ export class IsbComputeStack extends Stack {
       orgMgtAccountId.valueAsString,
     );
 
+    // Get isGovCloud from CDK context (set via --context isGovCloud=true/false)
+    const isGovCloud = this.node.tryGetContext("isGovCloud") === "true";
+
     new IsbComputeResources(this, {
       namespace: namespaceParam.namespace.valueAsString,
       orgMgtAccountId: orgMgtAccountId.valueAsString,
       idcAccountId: idcAccountId.valueAsString,
       allowListedCidr: allowListedCidr.valueAsList,
       useStableTaggingCondition: useStableTagging.getCondition(),
+      isGovCloud: isGovCloud,
     });
 
     new ApplicationInsights(this, "IsbApplicationInsights", {

@@ -6,6 +6,7 @@ import * as cdk from "aws-cdk-lib";
 import { getSolutionContext } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { IsbAccountPoolStack } from "@amzn/innovation-sandbox-infrastructure/isb-account-pool-stack";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
+import { IsbContainerStack } from "@amzn/innovation-sandbox-infrastructure/isb-container-stack";
 import { IsbDataStack } from "@amzn/innovation-sandbox-infrastructure/isb-data-stack";
 import { IsbIdcStack } from "@amzn/innovation-sandbox-infrastructure/isb-idc-stack";
 import { SolutionsEngineeringSynthesizer } from "@amzn/innovation-sandbox-infrastructure/stack-synthesizers/solutions-engineering-synthesizer";
@@ -39,5 +40,10 @@ new IsbDataStack(app, "InnovationSandbox-Data", {
 
 new IsbComputeStack(app, "InnovationSandbox-Compute", {
   description: `(${context.solutionId}-ComputeStack) ${context.solutionName} ${context.version}`,
+  synthesizer: synthesizer,
+});
+
+new IsbContainerStack(app, "InnovationSandbox-Container", {
+  description: `(${context.solutionId}-ContainerStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });

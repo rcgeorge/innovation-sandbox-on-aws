@@ -14,31 +14,186 @@
  * - Auto-scaling based on CPU/memory utilization
  */
 
+import { Duration } from "aws-cdk-lib";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as ecr from "aws-cdk-lib/aws-ecr";
+import * as ecs from "aws-cdk-lib/aws-ecs";
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
 
 export interface EcsFrontendProps {
   readonly namespace: string;
+  readonly vpc: ec2.IVpc;
   readonly privateEcrFrontendRepo?: string;
+  readonly privateEcrRepoRegion?: string;
   readonly restApiUrl: string;
+  readonly cluster: ecs.ICluster;
+  readonly allowedCidrs?: string[];
 }
 
 export class EcsFrontend extends Construct {
+  public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
+  public readonly service: ecs.FargateService;
+  public readonly taskDefinition: ecs.FargateTaskDefinition;
+
   constructor(scope: Construct, id: string, props: EcsFrontendProps) {
     super(scope, id);
 
-    // TODO: Implement ECS infrastructure
-    // This is a placeholder for future ECS deployment of the frontend
-    // When CloudFront is not available (e.g., in GovCloud), this construct will:
-    //
-    // 1. Create VPC with public/private subnets
-    // 2. Create Application Load Balancer (ALB)
-    // 3. Create ECS Cluster
-    // 4. Create ECS Task Definition with frontend container
-    // 5. Create ECS Service with auto-scaling
-    // 6. Create security groups and IAM roles
-    // 7. Optionally integrate with ACM for HTTPS
+    if (!props.privateEcrFrontendRepo) {
+      throw new Error(
+        "Private ECR repository is required for ECS frontend deployment. " +
+        "Please specify PRIVATE_ECR_FRONTEND_REPO in your configuration."
+      );
+    }
 
-    console.log(`ECS Frontend construct initialized for namespace: ${props.namespace}`);
-    console.log(`Private ECR Frontend Repo: ${props.privateEcrFrontendRepo || 'Not configured'}`);
+    // Create CloudWatch Log Group
+    const logGroup = new logs.LogGroup(this, "LogGroup", {
+      logGroupName: `/aws/ecs/${props.namespace}-frontend`,
+      retention: logs.RetentionDays.ONE_WEEK,
+    });
+
+    // Create Application Load Balancer
+    const albSecurityGroup = new ec2.SecurityGroup(this, "AlbSecurityGroup", {
+      vpc: props.vpc,
+      description: "Security group for frontend ALB",
+      allowAllOutbound: true,
+    });
+
+    // Allow HTTP/HTTPS from specified CIDRs or anywhere
+    const allowedCidrs = props.allowedCidrs || ["0.0.0.0/0"];
+    allowedCidrs.forEach((cidr, index) => {
+      albSecurityGroup.addIngressRule(
+        ec2.Peer.ipv4(cidr),
+        ec2.Port.tcp(80),
+        `Allow HTTP from ${cidr}`
+      );
+      albSecurityGroup.addIngressRule(
+        ec2.Peer.ipv4(cidr),
+        ec2.Port.tcp(443),
+        `Allow HTTPS from ${cidr}`
+      );
+    });
+
+    this.loadBalancer = new elbv2.ApplicationLoadBalancer(this, "LoadBalancer", {
+      vpc: props.vpc,
+      internetFacing: true,
+      securityGroup: albSecurityGroup,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC,
+      },
+    });
+
+    // Create ECS Task Definition
+    this.taskDefinition = new ecs.FargateTaskDefinition(this, "TaskDefinition", {
+      memoryLimitMiB: 512,
+      cpu: 256,
+      runtimePlatform: {
+        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+        cpuArchitecture: ecs.CpuArchitecture.X86_64,
+      },
+    });
+
+    // Get container image from private ECR
+    const repository = ecr.Repository.fromRepositoryName(
+      this,
+      "PrivateEcrRepo",
+      props.privateEcrFrontendRepo
+    );
+    const containerImage = ecs.ContainerImage.fromEcrRepository(repository, "latest");
+
+    // Add container to task definition
+    const container = this.taskDefinition.addContainer("FrontendContainer", {
+      image: containerImage,
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: "frontend",
+        logGroup: logGroup,
+      }),
+      environment: {
+        VITE_API_URL: props.restApiUrl,
+        NAMESPACE: props.namespace,
+      },
+      portMappings: [
+        {
+          containerPort: 80,
+          protocol: ecs.Protocol.TCP,
+        },
+      ],
+      healthCheck: {
+        command: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:80/health || exit 1"],
+        interval: Duration.seconds(30),
+        timeout: Duration.seconds(5),
+        retries: 3,
+        startPeriod: Duration.seconds(60),
+      },
+    });
+
+    // Create security group for ECS service
+    const serviceSecurityGroup = new ec2.SecurityGroup(this, "ServiceSecurityGroup", {
+      vpc: props.vpc,
+      description: "Security group for frontend ECS service",
+      allowAllOutbound: true,
+    });
+
+    serviceSecurityGroup.addIngressRule(
+      albSecurityGroup,
+      ec2.Port.tcp(80),
+      "Allow traffic from ALB"
+    );
+
+    // Create ECS Service
+    this.service = new ecs.FargateService(this, "Service", {
+      cluster: props.cluster,
+      taskDefinition: this.taskDefinition,
+      desiredCount: 2, // Run 2 tasks for high availability
+      assignPublicIp: false,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+      },
+      securityGroups: [serviceSecurityGroup],
+      enableExecuteCommand: true,
+      healthCheckGracePeriod: Duration.seconds(60),
+    });
+
+    // Add target group and listener
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, "TargetGroup", {
+      vpc: props.vpc,
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targets: [this.service],
+      healthCheck: {
+        path: "/health",
+        interval: Duration.seconds(30),
+        timeout: Duration.seconds(5),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
+      },
+      deregistrationDelay: Duration.seconds(30),
+    });
+
+    // Add HTTP listener (can be upgraded to HTTPS with ACM certificate)
+    this.loadBalancer.addListener("HttpListener", {
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      defaultTargetGroups: [targetGroup],
+    });
+
+    // Enable auto-scaling
+    const scaling = this.service.autoScaleTaskCount({
+      minCapacity: 2,
+      maxCapacity: 10,
+    });
+
+    scaling.scaleOnCpuUtilization("CpuScaling", {
+      targetUtilizationPercent: 70,
+      scaleInCooldown: Duration.seconds(60),
+      scaleOutCooldown: Duration.seconds(60),
+    });
+
+    scaling.scaleOnMemoryUtilization("MemoryScaling", {
+      targetUtilizationPercent: 80,
+      scaleInCooldown: Duration.seconds(60),
+      scaleOutCooldown: Duration.seconds(60),
+    });
   }
 }

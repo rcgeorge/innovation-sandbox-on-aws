@@ -12,6 +12,14 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// AWS SDK v3 imports
+const { STSClient, GetCallerIdentityCommand } = require('@aws-sdk/client-sts');
+const { SSOAdminClient, ListInstancesCommand } = require('@aws-sdk/client-sso-admin');
+const { OrganizationsClient, ListRootsCommand } = require('@aws-sdk/client-organizations');
+const { ECRClient, DescribeRepositoriesCommand, CreateRepositoryCommand, DescribeImagesCommand } = require('@aws-sdk/client-ecr');
+const { CloudFormationClient, DescribeStacksCommand } = require('@aws-sdk/client-cloudformation');
+const { EC2Client, DescribeRegionsCommand } = require('@aws-sdk/client-ec2');
+
 const envPath = path.join(__dirname, '..', '.env');
 const envExamplePath = path.join(__dirname, '..', '.env.example');
 
@@ -68,41 +76,23 @@ function hasValidConfiguration() {
   return true;
 }
 
-// Function to get current AWS account ID
-function getCurrentAwsAccountId() {
+// Function to get current AWS account ID using AWS SDK
+async function getCurrentAwsAccountId() {
   try {
-    // First try the standard AWS CLI command
-    const output = execSync('aws sts get-caller-identity --query Account --output text', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000
-    });
-    const accountId = output.trim();
-    if (accountId && /^\d{12}$/.test(accountId)) {
-      return accountId;
+    const client = new STSClient({});
+    const command = new GetCallerIdentityCommand({});
+    const response = await client.send(command);
+
+    if (response.Account && /^\d{12}$/.test(response.Account)) {
+      return response.Account;
     }
   } catch (error) {
-    // Silently fail and try alternative methods
+    // Silently fail and try environment variable
   }
 
   // Try getting from environment variable
   if (process.env.AWS_ACCOUNT_ID && /^\d{12}$/.test(process.env.AWS_ACCOUNT_ID)) {
     return process.env.AWS_ACCOUNT_ID;
-  }
-
-  // Try JSON output format as fallback
-  try {
-    const output = execSync('aws sts get-caller-identity --output json', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000
-    });
-    const data = JSON.parse(output);
-    if (data.Account && /^\d{12}$/.test(data.Account)) {
-      return data.Account;
-    }
-  } catch (error) {
-    // Silently fail
   }
 
   return null;
@@ -123,21 +113,24 @@ function getCurrentAwsRegion() {
   }
 }
 
-// Function to get IAM Identity Center instance information
+// Function to get IAM Identity Center instance information using AWS SDK
 // IAM Identity Center is a global service but the instance is created in a specific region
-function getIdentityCenterInfo() {
+async function getIdentityCenterInfo() {
   // First try the current region
   try {
-    const output = execSync('aws sso-admin list-instances --query "Instances[0].[IdentityStoreId,InstanceArn]" --output text', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000
-    });
-    const [identityStoreId, instanceArn] = output.trim().split(/\s+/);
-    // Support both commercial and GovCloud ARNs
-    if (identityStoreId && instanceArn && identityStoreId !== 'None' && instanceArn !== 'None'
-        && instanceArn.match(/^arn:aws(-us-gov)?:sso:::instance\/(sso)?ins-/)) {
-      return { identityStoreId, instanceArn, region: null };
+    const client = new SSOAdminClient({});
+    const command = new ListInstancesCommand({});
+    const response = await client.send(command);
+
+    if (response.Instances && response.Instances.length > 0) {
+      const instance = response.Instances[0];
+      const identityStoreId = instance.IdentityStoreId;
+      const instanceArn = instance.InstanceArn;
+
+      // Support both commercial and GovCloud ARNs
+      if (identityStoreId && instanceArn && instanceArn.match(/^arn:aws(-us-gov)?:sso:::instance\/(sso)?ins-/)) {
+        return { identityStoreId, instanceArn, region: null };
+      }
     }
   } catch (error) {
     // Silently fail and try other regions
@@ -148,16 +141,19 @@ function getIdentityCenterInfo() {
 
   for (const region of commonIdcRegions) {
     try {
-      const output = execSync(`aws sso-admin list-instances --region ${region} --query "Instances[0].[IdentityStoreId,InstanceArn]" --output text`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 5000
-      });
-      const [identityStoreId, instanceArn] = output.trim().split(/\s+/);
-      // Support both commercial and GovCloud ARNs
-      if (identityStoreId && instanceArn && identityStoreId !== 'None' && instanceArn !== 'None'
-          && instanceArn.match(/^arn:aws(-us-gov)?:sso:::instance\/(sso)?ins-/)) {
-        return { identityStoreId, instanceArn, region };
+      const client = new SSOAdminClient({ region });
+      const command = new ListInstancesCommand({});
+      const response = await client.send(command);
+
+      if (response.Instances && response.Instances.length > 0) {
+        const instance = response.Instances[0];
+        const identityStoreId = instance.IdentityStoreId;
+        const instanceArn = instance.InstanceArn;
+
+        // Support both commercial and GovCloud ARNs
+        if (identityStoreId && instanceArn && instanceArn.match(/^arn:aws(-us-gov)?:sso:::instance\/(sso)?ins-/)) {
+          return { identityStoreId, instanceArn, region };
+        }
       }
     } catch (error) {
       // Continue to next region
@@ -167,17 +163,151 @@ function getIdentityCenterInfo() {
   return { identityStoreId: null, instanceArn: null, region: null };
 }
 
-// Function to get organization root ID
-function getOrganizationRootId() {
+// Function to get organization root ID using AWS SDK
+async function getOrganizationRootId() {
   try {
-    const output = execSync('aws organizations list-roots --query "Roots[0].Id" --output text', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-    return output.trim();
+    const client = new OrganizationsClient({});
+    const command = new ListRootsCommand({});
+    const response = await client.send(command);
+
+    if (response.Roots && response.Roots.length > 0) {
+      return response.Roots[0].Id;
+    }
   } catch (error) {
-    return null;
+    // Silently fail
   }
+  return null;
+}
+
+// Function to get enabled regions for the account using AWS SDK
+async function getEnabledRegions(currentRegion) {
+  try {
+    // Use EC2 DescribeRegions which is more widely available and doesn't require special permissions
+    // Must use a valid region for the credentials (e.g., GovCloud credentials need GovCloud region)
+    const region = currentRegion || undefined; // Let SDK use default if no region specified
+    const client = new EC2Client({ region });
+    const command = new DescribeRegionsCommand({
+      AllRegions: false // Only get opted-in regions
+    });
+    const response = await client.send(command);
+
+    if (response.Regions && response.Regions.length > 0) {
+      // Extract just the region names and sort them
+      const regions = response.Regions
+        .map(r => r.RegionName)
+        .filter(r => r) // Remove any undefined values
+        .sort();
+      return regions;
+    }
+  } catch (error) {
+    // Silently fail - might not have permissions or API not available in this region
+  }
+  return null;
+}
+
+// Function to get Compute stack outputs using AWS SDK
+async function getComputeStackOutputs(namespace) {
+  try {
+    const stackName = 'InnovationSandbox-Compute';
+    const client = new CloudFormationClient({});
+    const command = new DescribeStacksCommand({ StackName: stackName });
+    const response = await client.send(command);
+
+    if (response.Stacks && response.Stacks.length > 0) {
+      const outputs = response.Stacks[0].Outputs || [];
+
+      // Find the REST API URL output
+      const apiUrlOutput = outputs.find(o =>
+        o.OutputKey === 'IsbRestApiUrl' ||
+        o.OutputKey.includes('RestApi') ||
+        o.OutputKey.includes('ApiUrl')
+      );
+
+      return {
+        restApiUrl: apiUrlOutput ? apiUrlOutput.OutputValue : null
+      };
+    }
+  } catch (error) {
+    // Silently fail
+  }
+  return { restApiUrl: null };
+}
+
+// Helper function to check if ECR repository exists using AWS SDK
+async function ecrRepositoryExists(repositoryName, region) {
+  try {
+    const client = new ECRClient({ region });
+    const command = new DescribeRepositoriesCommand({ repositoryNames: [repositoryName] });
+    await client.send(command);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Helper function to create ECR repository using AWS SDK
+async function createEcrRepository(repositoryName, region) {
+  try {
+    const client = new ECRClient({ region });
+    const command = new CreateRepositoryCommand({
+      repositoryName,
+      imageScanningConfiguration: { scanOnPush: true }
+    });
+    await client.send(command);
+    return true;
+  } catch (error) {
+    throw new Error(`Failed to create ECR repository: ${error.message}`);
+  }
+}
+
+// Helper function to check if ECR image exists using AWS SDK
+async function ecrImageExists(repositoryName, region, imageTag = 'latest') {
+  try {
+    const client = new ECRClient({ region });
+    const command = new DescribeImagesCommand({
+      repositoryName,
+      imageIds: [{ imageTag }]
+    });
+    const response = await client.send(command);
+    return response.imageDetails && response.imageDetails.length > 0;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Helper function to detect existing ECR repos by namespace
+async function detectExistingEcrRepos(namespace, region) {
+  const accountCleanerRepoName = `${namespace}-account-cleaner`;
+  const frontendRepoName = `${namespace}-frontend`;
+
+  const result = {
+    accountCleaner: null,
+    frontend: null
+  };
+
+  // Check for account cleaner repo
+  const accountCleanerExists = await ecrRepositoryExists(accountCleanerRepoName, region);
+  if (accountCleanerExists) {
+    const hasImage = await ecrImageExists(accountCleanerRepoName, region, 'latest');
+    result.accountCleaner = {
+      repoName: accountCleanerRepoName,
+      region: region,
+      hasLatestImage: hasImage
+    };
+  }
+
+  // Check for frontend repo
+  const frontendExists = await ecrRepositoryExists(frontendRepoName, region);
+  if (frontendExists) {
+    const hasImage = await ecrImageExists(frontendRepoName, region, 'latest');
+    result.frontend = {
+      repoName: frontendRepoName,
+      region: region,
+      hasLatestImage: hasImage
+    };
+  }
+
+  return result;
 }
 
 async function main() {
@@ -199,6 +329,48 @@ async function main() {
     ]);
 
     if (!wantToEdit) {
+      // Before verifying ECR, check if we need to auto-detect and add missing ECR repos
+      const missingEcrInEnv = !existingEnv.PRIVATE_ECR_REPO && !existingEnv.PRIVATE_ECR_FRONTEND_REPO;
+
+      if (missingEcrInEnv && existingEnv.NAMESPACE) {
+        console.log('\n🔍 Checking for existing ECR repositories...');
+        const currentRegion = getCurrentAwsRegion();
+        const ecrRegion = currentRegion || 'us-east-1';
+        const detectedEcrRepos = await detectExistingEcrRepos(existingEnv.NAMESPACE.replace(/["']/g, ''), ecrRegion);
+
+        if (detectedEcrRepos.accountCleaner || detectedEcrRepos.frontend) {
+          // Read current .env content
+          let envContent = fs.readFileSync(envPath, 'utf-8');
+
+          if (detectedEcrRepos.accountCleaner) {
+            console.log(`✓ Found account cleaner ECR repository: ${detectedEcrRepos.accountCleaner.repoName}`);
+            envContent = envContent.replace(/^# PRIVATE_ECR_REPO=.*/m, `PRIVATE_ECR_REPO="${detectedEcrRepos.accountCleaner.repoName}"`);
+            envContent = envContent.replace(/^# PRIVATE_ECR_REPO_REGION=.*/m, `PRIVATE_ECR_REPO_REGION="${detectedEcrRepos.accountCleaner.region}"`);
+          }
+
+          if (detectedEcrRepos.frontend) {
+            console.log(`✓ Found frontend ECR repository: ${detectedEcrRepos.frontend.repoName}`);
+            envContent = envContent.replace(/^# PRIVATE_ECR_FRONTEND_REPO=.*/m, `PRIVATE_ECR_FRONTEND_REPO="${detectedEcrRepos.frontend.repoName}"`);
+          }
+
+          // Write updated .env
+          fs.writeFileSync(envPath, envContent);
+          console.log('✓ Updated .env file with detected ECR repositories\n');
+
+          // Reload existingEnv with new values
+          existingEnv = {};
+          const updatedEnvContent = fs.readFileSync(envPath, 'utf-8');
+          updatedEnvContent.split(/\r?\n/).forEach(line => {
+            const match = line.match(/^([^#=]+)=(.*)$/);
+            if (match) {
+              existingEnv[match[1].trim()] = match[2].trim();
+            }
+          });
+        } else {
+          console.log('⚠️  No existing ECR repositories found for this namespace\n');
+        }
+      }
+
       // User doesn't want to edit - verify and deploy ECR if configured
       await verifyAndDeployECR();
       return;
@@ -214,10 +386,14 @@ async function main() {
   // Detect AWS environment information
   console.log('🔍 Detecting AWS environment configuration...\n');
 
-  const currentAccountId = getCurrentAwsAccountId();
+  const currentAccountId = await getCurrentAwsAccountId();
   const currentRegion = getCurrentAwsRegion();
-  const identityCenter = getIdentityCenterInfo();
-  const orgRootId = getOrganizationRootId();
+  const identityCenter = await getIdentityCenterInfo();
+  const orgRootId = await getOrganizationRootId();
+  const enabledRegions = await getEnabledRegions(currentRegion);
+
+  // Auto-detect GovCloud based on region
+  const isGovCloud = currentRegion && currentRegion.includes('-gov-');
 
   if (currentAccountId) {
     console.log(`✓ AWS Account: ${currentAccountId}`);
@@ -226,7 +402,8 @@ async function main() {
   }
 
   if (currentRegion) {
-    console.log(`✓ AWS Region: ${currentRegion}`);
+    const regionType = isGovCloud ? ' (GovCloud)' : ' (Commercial)';
+    console.log(`✓ AWS Region: ${currentRegion}${regionType}`);
   } else {
     console.log('⚠️  AWS Region: Not detected');
   }
@@ -242,6 +419,12 @@ async function main() {
     console.log(`✓ Organization Root: ${orgRootId}`);
   } else {
     console.log('⚠️  Organization Root: Not detected');
+  }
+
+  if (enabledRegions && enabledRegions.length > 0) {
+    console.log(`✓ Enabled Regions: ${enabledRegions.length} regions detected`);
+  } else {
+    console.log('⚠️  Enabled Regions: Not detected');
   }
 
   console.log('');
@@ -334,9 +517,15 @@ async function main() {
     name: 'AWS_REGIONS',
     message: 'AWS Regions for sandbox accounts (comma-separated, e.g., "us-east-1,us-west-2"):',
     default: (answers) => {
+      // Priority: existing env > detected enabled regions > current region > fallback
       if (existingEnv.AWS_REGIONS) return existingEnv.AWS_REGIONS;
+      if (enabledRegions && enabledRegions.length > 0) {
+        // Use all enabled regions, comma-separated
+        return enabledRegions.join(',');
+      }
       if (currentRegion) return currentRegion;
-      return 'us-east-1,us-west-2'; // Keep sensible default for regions
+      // Fallback based on deployment type
+      return isGovCloud ? 'us-gov-east-1,us-gov-west-1' : 'us-east-1,us-west-2';
     },
     validate: (input) => {
       if (!input || input.trim() === '') {
@@ -371,7 +560,7 @@ async function main() {
     type: 'input',
     name: 'IDENTITY_STORE_ID',
     message: 'IAM Identity Center Identity Store ID:',
-    default: (answers) => {
+    default: async (answers) => {
       if (existingEnv.IDENTITY_STORE_ID && existingEnv.IDENTITY_STORE_ID !== 'd-0000000000') {
         return existingEnv.IDENTITY_STORE_ID;
       }
@@ -380,14 +569,15 @@ async function main() {
       // If user specified IDC region, try to auto-detect from that region
       if (answers.IDC_REGION) {
         try {
-          const output = execSync(`aws sso-admin list-instances --region ${answers.IDC_REGION} --query "Instances[0].IdentityStoreId" --output text`, {
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe'],
-            timeout: 5000
-          });
-          const id = output.trim();
-          if (id && id !== 'None' && /^d-[0-9a-z]{10}$/.test(id)) {
-            return id;
+          const client = new SSOAdminClient({ region: answers.IDC_REGION });
+          const command = new ListInstancesCommand({});
+          const response = await client.send(command);
+
+          if (response.Instances && response.Instances.length > 0) {
+            const id = response.Instances[0].IdentityStoreId;
+            if (id && /^d-[0-9a-z]{10}$/.test(id)) {
+              return id;
+            }
           }
         } catch (error) {
           // Silently fail
@@ -410,7 +600,7 @@ async function main() {
     type: 'input',
     name: 'SSO_INSTANCE_ARN',
     message: 'IAM Identity Center SSO Instance ARN:',
-    default: (answers) => {
+    default: async (answers) => {
       if (existingEnv.SSO_INSTANCE_ARN && existingEnv.SSO_INSTANCE_ARN !== 'arn:aws:sso:::instance/ssoins-0000000000000000') {
         return existingEnv.SSO_INSTANCE_ARN;
       }
@@ -419,15 +609,16 @@ async function main() {
       // If user specified IDC region, try to auto-detect from that region
       if (answers.IDC_REGION) {
         try {
-          const output = execSync(`aws sso-admin list-instances --region ${answers.IDC_REGION} --query "Instances[0].InstanceArn" --output text`, {
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe'],
-            timeout: 5000
-          });
-          const arn = output.trim();
-          // Support both commercial and GovCloud ARNs
-          if (arn && arn !== 'None' && arn.match(/^arn:aws(-us-gov)?:sso:::instance\/(sso)?ins-/)) {
-            return arn;
+          const client = new SSOAdminClient({ region: answers.IDC_REGION });
+          const command = new ListInstancesCommand({});
+          const response = await client.send(command);
+
+          if (response.Instances && response.Instances.length > 0) {
+            const arn = response.Instances[0].InstanceArn;
+            // Support both commercial and GovCloud ARNs
+            if (arn && arn.match(/^arn:aws(-us-gov)?:sso:::instance\/(sso)?ins-/)) {
+              return arn;
+            }
           }
         } catch (error) {
           // Silently fail
@@ -618,6 +809,76 @@ async function main() {
     name: 'ACCEPT_TERMS',
     message: 'Do you accept the Solution Terms of Use? (Required to deploy Compute stack)',
     default: existingEnv.ACCEPT_SOLUTION_TERMS_OF_USE === 'Accept'
+  },
+  {
+    type: 'confirm',
+    name: 'CONFIGURE_CONTAINER_STACK',
+    message: 'Do you want to configure the Container stack? (For GovCloud or ECS-based frontend deployment)',
+    default: !!(existingEnv.REST_API_URL || isGovCloud),
+    when: () => {
+      // Only ask if Container stack values are missing
+      const hasContainerConfig = !!(existingEnv.ALLOWED_IP_RANGES && existingEnv.VPC_CIDR);
+      return !hasContainerConfig;
+    }
+  },
+  {
+    type: 'input',
+    name: 'REST_API_URL',
+    message: 'REST API URL from Compute stack (leave empty if not deployed yet):',
+    when: (answers) => answers.CONFIGURE_CONTAINER_STACK,
+    default: async (answers) => {
+      if (existingEnv.REST_API_URL) return existingEnv.REST_API_URL;
+
+      // Only try to auto-detect if Compute stack might be deployed
+      // (silently check without showing messages)
+      try {
+        const stackOutputs = await getComputeStackOutputs(answers.NAMESPACE);
+        if (stackOutputs.restApiUrl) {
+          return stackOutputs.restApiUrl;
+        }
+      } catch (error) {
+        // Silently fail - stack not deployed yet
+      }
+
+      return ''; // Empty default if not deployed
+    }
+  },
+  {
+    type: 'input',
+    name: 'ALLOWED_IP_RANGES',
+    message: 'Allowed IP ranges for Container stack ALB (comma-separated CIDR blocks):',
+    when: (answers) => answers.CONFIGURE_CONTAINER_STACK,
+    default: existingEnv.ALLOWED_IP_RANGES || '0.0.0.0/0',
+    validate: (input) => {
+      if (!input || input.trim() === '') {
+        return 'At least one IP range is required';
+      }
+      const ranges = input.split(',').map(r => r.trim());
+      const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$/;
+      for (const range of ranges) {
+        if (!cidrRegex.test(range)) {
+          return `Invalid CIDR block: ${range}`;
+        }
+      }
+      return true;
+    }
+  },
+  {
+    type: 'input',
+    name: 'VPC_CIDR',
+    message: 'VPC CIDR block for Container stack:',
+    when: (answers) => answers.CONFIGURE_CONTAINER_STACK,
+    default: existingEnv.VPC_CIDR || '10.0.0.0/16',
+    validate: (input) => {
+      if (!input || input.trim() === '') {
+        return 'VPC CIDR is required';
+      }
+      const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$/;
+      if (!cidrRegex.test(input)) {
+        return 'Invalid CIDR block format';
+      }
+      return true;
+    }
   }
 ];
 
@@ -635,12 +896,46 @@ async function main() {
       idcAccountId = answers.IDC_ACCOUNT_ID;
     }
 
+    // Auto-detect existing ECR repositories if user didn't configure them OR if .env doesn't have them
+    let detectedEcrRepos = null;
+    const missingEcrInEnv = !existingEnv.PRIVATE_ECR_REPO && !existingEnv.PRIVATE_ECR_FRONTEND_REPO;
+    const userSkippedEcrConfig = !answers.CONFIGURE_PRIVATE_ECR && !answers.CONFIGURE_FRONTEND_ECR;
+
+    if (userSkippedEcrConfig || missingEcrInEnv) {
+      console.log('\n🔍 Checking for existing ECR repositories...');
+      const ecrRegion = currentRegion || 'us-east-1';
+      detectedEcrRepos = await detectExistingEcrRepos(answers.NAMESPACE, ecrRegion);
+
+      if (detectedEcrRepos.accountCleaner) {
+        console.log(`✓ Found account cleaner ECR repository: ${detectedEcrRepos.accountCleaner.repoName} in ${detectedEcrRepos.accountCleaner.region}`);
+        if (detectedEcrRepos.accountCleaner.hasLatestImage) {
+          console.log(`  ✓ Image with 'latest' tag found`);
+        }
+      }
+
+      if (detectedEcrRepos.frontend) {
+        console.log(`✓ Found frontend ECR repository: ${detectedEcrRepos.frontend.repoName} in ${detectedEcrRepos.frontend.region}`);
+        if (detectedEcrRepos.frontend.hasLatestImage) {
+          console.log(`  ✓ Image with 'latest' tag found`);
+        }
+      }
+
+      if (!detectedEcrRepos.accountCleaner && !detectedEcrRepos.frontend) {
+        console.log('⚠️  No existing ECR repositories found for this namespace');
+      }
+      console.log('');
+    }
+
     // Build .env content from template
     let envContent = fs.readFileSync(envExamplePath, 'utf-8');
 
     // Replace values
     envContent = envContent.replace(/^(# )?DEPLOYMENT_MODE=.*/m,
       answers.DEPLOYMENT_MODE ? `DEPLOYMENT_MODE="${answers.DEPLOYMENT_MODE}"` : '# DEPLOYMENT_MODE="dev"');
+
+    // Set IS_GOVCLOUD based on detected region
+    envContent = envContent.replace(/^(# )?IS_GOVCLOUD=.*/m,
+      `IS_GOVCLOUD="${isGovCloud ? 'true' : 'false'}"`);
 
     envContent = envContent.replace(/^HUB_ACCOUNT_ID=.*/m, `HUB_ACCOUNT_ID=${hubAccountId}`);
     envContent = envContent.replace(/^NAMESPACE=.*/m, `NAMESPACE="${answers.NAMESPACE}"`);
@@ -657,19 +952,46 @@ async function main() {
       `ACCEPT_SOLUTION_TERMS_OF_USE="${answers.ACCEPT_TERMS ? 'Accept' : ''}"`);
 
     // Handle optional private ECR configuration
-    if (answers.CONFIGURE_PRIVATE_ECR) {
-      envContent = envContent.replace(/^# PRIVATE_ECR_REPO=.*/m, `PRIVATE_ECR_REPO="${answers.PRIVATE_ECR_REPO}"`);
-      envContent = envContent.replace(/^# PRIVATE_ECR_REPO_REGION=.*/m, `PRIVATE_ECR_REPO_REGION="${answers.PRIVATE_ECR_REPO_REGION}"`);
-    }
+    // Priority: user input > detected repos > existing config
+    const ecrRepo = answers.PRIVATE_ECR_REPO
+      || (detectedEcrRepos?.accountCleaner?.repoName)
+      || existingEnv.PRIVATE_ECR_REPO;
 
-    // Handle optional frontend ECR configuration
-    if (answers.CONFIGURE_FRONTEND_ECR) {
-      envContent = envContent.replace(/^# PRIVATE_ECR_FRONTEND_REPO=.*/m, `PRIVATE_ECR_FRONTEND_REPO="${answers.PRIVATE_ECR_FRONTEND_REPO}"`);
+    const ecrRegion = answers.PRIVATE_ECR_REPO_REGION
+      || (detectedEcrRepos?.accountCleaner?.region)
+      || (detectedEcrRepos?.frontend?.region)
+      || existingEnv.PRIVATE_ECR_REPO_REGION;
+
+    const frontendEcrRepo = answers.PRIVATE_ECR_FRONTEND_REPO
+      || (detectedEcrRepos?.frontend?.repoName)
+      || existingEnv.PRIVATE_ECR_FRONTEND_REPO;
+
+    if (ecrRepo) {
+      envContent = envContent.replace(/^# PRIVATE_ECR_REPO=.*/m, `PRIVATE_ECR_REPO="${ecrRepo}"`);
+    }
+    if (ecrRegion) {
+      envContent = envContent.replace(/^# PRIVATE_ECR_REPO_REGION=.*/m, `PRIVATE_ECR_REPO_REGION="${ecrRegion}"`);
+    }
+    if (frontendEcrRepo) {
+      envContent = envContent.replace(/^# PRIVATE_ECR_FRONTEND_REPO=.*/m, `PRIVATE_ECR_FRONTEND_REPO="${frontendEcrRepo}"`);
     }
 
     // Handle optional custom nuke config
     if (answers.CONFIGURE_CUSTOM_NUKE) {
       envContent = envContent.replace(/^# NUKE_CONFIG_FILE_PATH=.*/m, `NUKE_CONFIG_FILE_PATH="${answers.NUKE_CONFIG_FILE_PATH}"`);
+    }
+
+    // Handle Container stack configuration
+    if (answers.CONFIGURE_CONTAINER_STACK) {
+      if (answers.REST_API_URL) {
+        envContent = envContent.replace(/^# REST_API_URL=.*/m, `REST_API_URL="${answers.REST_API_URL}"`);
+      }
+      if (answers.ALLOWED_IP_RANGES) {
+        envContent = envContent.replace(/^# ALLOWED_IP_RANGES=.*/m, `ALLOWED_IP_RANGES="${answers.ALLOWED_IP_RANGES}"`);
+      }
+      if (answers.VPC_CIDR) {
+        envContent = envContent.replace(/^# VPC_CIDR=.*/m, `VPC_CIDR="${answers.VPC_CIDR}"`);
+      }
     }
 
     // Write .env file
@@ -687,22 +1009,16 @@ async function main() {
         console.log(`\n🔨 Creating ECR repository "${ecrRepoName}" in ${ecrRegion}...`);
         try {
           // Check if repo already exists
-          execSync(`aws ecr describe-repositories --repository-names ${ecrRepoName} --region ${ecrRegion}`, {
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe']
-          });
-          console.log(`✓ ECR repository "${ecrRepoName}" already exists`);
-        } catch (error) {
-          // Repository doesn't exist, create it
-          try {
-            execSync(`aws ecr create-repository --repository-name ${ecrRepoName} --region ${ecrRegion} --image-scanning-configuration scanOnPush=true`, {
-              encoding: 'utf-8',
-              stdio: 'inherit'
-            });
+          const exists = await ecrRepositoryExists(ecrRepoName, ecrRegion);
+          if (exists) {
+            console.log(`✓ ECR repository "${ecrRepoName}" already exists`);
+          } else {
+            // Repository doesn't exist, create it
+            await createEcrRepository(ecrRepoName, ecrRegion);
             console.log(`✓ ECR repository "${ecrRepoName}" created successfully`);
-          } catch (createError) {
-            console.error(`❌ Failed to create ECR repository: ${createError.message}`);
           }
+        } catch (error) {
+          console.error(`❌ ${error.message}`);
         }
       }
 
@@ -744,22 +1060,16 @@ async function main() {
         console.log(`\n🔨 Creating frontend ECR repository "${frontendEcrRepoName}" in ${ecrRegion}...`);
         try {
           // Check if repo already exists
-          execSync(`aws ecr describe-repositories --repository-names ${frontendEcrRepoName} --region ${ecrRegion}`, {
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe']
-          });
-          console.log(`✓ Frontend ECR repository "${frontendEcrRepoName}" already exists`);
-        } catch (error) {
-          // Repository doesn't exist, create it
-          try {
-            execSync(`aws ecr create-repository --repository-name ${frontendEcrRepoName} --region ${ecrRegion} --image-scanning-configuration scanOnPush=true`, {
-              encoding: 'utf-8',
-              stdio: 'inherit'
-            });
+          const exists = await ecrRepositoryExists(frontendEcrRepoName, ecrRegion);
+          if (exists) {
+            console.log(`✓ Frontend ECR repository "${frontendEcrRepoName}" already exists`);
+          } else {
+            // Repository doesn't exist, create it
+            await createEcrRepository(frontendEcrRepoName, ecrRegion);
             console.log(`✓ Frontend ECR repository "${frontendEcrRepoName}" created successfully`);
-          } catch (createError) {
-            console.error(`❌ Failed to create frontend ECR repository: ${createError.message}`);
           }
+        } catch (error) {
+          console.error(`❌ ${error.message}`);
         }
       }
 
@@ -796,11 +1106,28 @@ async function main() {
     console.log('  2. Ensure you have AWS CLI configured with appropriate credentials');
     if (answers.DEPLOYMENT_TYPE === 'single') {
       console.log('  3. Run: npm run bootstrap');
-      console.log('  4. Run: npm run deploy:all\n');
+      console.log('  4. Run: npm run deploy:all');
+      if (answers.CONFIGURE_CONTAINER_STACK) {
+        console.log('  5. After Compute stack is deployed, get the REST API URL from outputs');
+        console.log('     Add it to .env as REST_API_URL, then run: npm run deploy:container\n');
+      } else {
+        console.log('');
+      }
     } else {
       console.log('  3. Switch AWS credentials to each account as needed');
       console.log('  4. Run: npm run bootstrap');
-      console.log('  5. Run deployment commands in order: deploy:account-pool, deploy:idc, deploy:data, deploy:compute\n');
+      console.log('  5. Run deployment commands in order:');
+      console.log('     - npm run deploy:account-pool');
+      console.log('     - npm run deploy:idc');
+      console.log('     - npm run deploy:data');
+      console.log('     - npm run deploy:compute');
+      if (answers.CONFIGURE_CONTAINER_STACK) {
+        console.log('  6. After Compute stack is deployed:');
+        console.log('     - Get the REST API URL from Compute stack outputs');
+        console.log('     - Add it to .env as REST_API_URL');
+        console.log('     - Run: npm run deploy:container');
+      }
+      console.log('');
     }
 
   } catch (error) {
@@ -832,31 +1159,20 @@ async function verifyAndDeployECR() {
   // Check if account cleaner ECR repo exists and has images
   if (existingEnv.PRIVATE_ECR_REPO && existingEnv.PRIVATE_ECR_REPO.trim() !== '') {
     console.log(`📦 Checking account cleaner ECR repository: ${ecrRepoName}`);
-    try {
-      execSync(`aws ecr describe-repositories --repository-names ${ecrRepoName} --region ${ecrRegion}`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
+    const repoExists = await ecrRepositoryExists(ecrRepoName, ecrRegion);
+
+    if (repoExists) {
       console.log(`  ✓ Repository exists`);
 
       // Check if there are images with 'latest' tag
-      try {
-        const images = execSync(`aws ecr describe-images --repository-name ${ecrRepoName} --region ${ecrRegion} --image-ids imageTag=latest`, {
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
-        // If the command succeeds and returns output, the image exists
-        if (images && images.trim().length > 0) {
-          console.log(`  ✓ Image with 'latest' tag found\n`);
-        } else {
-          console.log(`  ⚠️  No 'latest' image found\n`);
-          needsAccountCleaner = true;
-        }
-      } catch (error) {
+      const imageExists = await ecrImageExists(ecrRepoName, ecrRegion, 'latest');
+      if (imageExists) {
+        console.log(`  ✓ Image with 'latest' tag found\n`);
+      } else {
         console.log(`  ⚠️  No 'latest' image found\n`);
         needsAccountCleaner = true;
       }
-    } catch (error) {
+    } else {
       console.log(`  ❌ Repository does not exist\n`);
       needsAccountCleaner = true;
     }
@@ -865,31 +1181,20 @@ async function verifyAndDeployECR() {
   // Check if frontend ECR repo exists and has images
   if (existingEnv.PRIVATE_ECR_FRONTEND_REPO && existingEnv.PRIVATE_ECR_FRONTEND_REPO.trim() !== '') {
     console.log(`📦 Checking frontend ECR repository: ${frontendEcrRepoName}`);
-    try {
-      execSync(`aws ecr describe-repositories --repository-names ${frontendEcrRepoName} --region ${ecrRegion}`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
+    const repoExists = await ecrRepositoryExists(frontendEcrRepoName, ecrRegion);
+
+    if (repoExists) {
       console.log(`  ✓ Repository exists`);
 
       // Check if there are images with 'latest' tag
-      try {
-        const images = execSync(`aws ecr describe-images --repository-name ${frontendEcrRepoName} --region ${ecrRegion} --image-ids imageTag=latest`, {
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
-        // If the command succeeds and returns output, the image exists
-        if (images && images.trim().length > 0) {
-          console.log(`  ✓ Image with 'latest' tag found\n`);
-        } else {
-          console.log(`  ⚠️  No 'latest' image found\n`);
-          needsFrontend = true;
-        }
-      } catch (error) {
+      const imageExists = await ecrImageExists(frontendEcrRepoName, ecrRegion, 'latest');
+      if (imageExists) {
+        console.log(`  ✓ Image with 'latest' tag found\n`);
+      } else {
         console.log(`  ⚠️  No 'latest' image found\n`);
         needsFrontend = true;
       }
-    } catch (error) {
+    } else {
       console.log(`  ❌ Repository does not exist\n`);
       needsFrontend = true;
     }
@@ -928,16 +1233,9 @@ async function verifyAndDeployECR() {
     console.log('\n🔨 Creating/deploying account cleaner ECR repository and image...');
     try {
       // Create repo if it doesn't exist
-      try {
-        execSync(`aws ecr describe-repositories --repository-names ${ecrRepoName} --region ${ecrRegion}`, {
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
-      } catch (error) {
-        execSync(`aws ecr create-repository --repository-name ${ecrRepoName} --region ${ecrRegion} --image-scanning-configuration scanOnPush=true`, {
-          encoding: 'utf-8',
-          stdio: 'inherit'
-        });
+      const exists = await ecrRepositoryExists(ecrRepoName, ecrRegion);
+      if (!exists) {
+        await createEcrRepository(ecrRepoName, ecrRegion);
         console.log(`✓ ECR repository "${ecrRepoName}" created successfully`);
       }
 
@@ -959,16 +1257,9 @@ async function verifyAndDeployECR() {
     console.log('\n🔨 Creating/deploying frontend ECR repository and image...');
     try {
       // Create repo if it doesn't exist
-      try {
-        execSync(`aws ecr describe-repositories --repository-names ${frontendEcrRepoName} --region ${ecrRegion}`, {
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
-      } catch (error) {
-        execSync(`aws ecr create-repository --repository-name ${frontendEcrRepoName} --region ${ecrRegion} --image-scanning-configuration scanOnPush=true`, {
-          encoding: 'utf-8',
-          stdio: 'inherit'
-        });
+      const exists = await ecrRepositoryExists(frontendEcrRepoName, ecrRegion);
+      if (!exists) {
+        await createEcrRepository(frontendEcrRepoName, ecrRegion);
         console.log(`✓ Frontend ECR repository "${frontendEcrRepoName}" created successfully`);
       }
 

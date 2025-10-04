@@ -26,6 +26,7 @@ export interface IsbComputeResourcesProps {
   idcAccountId: string;
   allowListedCidr: string[];
   useStableTaggingCondition: CfnCondition;
+  isGovCloud?: boolean;
 }
 
 export class IsbComputeResources {
@@ -89,12 +90,17 @@ export class IsbComputeResources {
       orgMgtAccountId: props.orgMgtAccountId,
       isbEventBus: isbInternalCore.eventBus,
       allowListedCidr: props.allowListedCidr,
+      isGovCloud: props.isGovCloud,
     });
 
-    new CloudfrontUiApi(scope, "CloudFrontUiApi", {
-      restApi,
-      namespace: props.namespace,
-    });
+    // CloudFront is not available in GovCloud regions
+    // Use Container stack for frontend deployment in GovCloud instead
+    if (!props.isGovCloud) {
+      new CloudfrontUiApi(scope, "CloudFrontUiApi", {
+        restApi,
+        namespace: props.namespace,
+      });
+    }
 
     new LogInsightsQueries(scope, "LogInsightsQueries", {
       namespace: props.namespace,
