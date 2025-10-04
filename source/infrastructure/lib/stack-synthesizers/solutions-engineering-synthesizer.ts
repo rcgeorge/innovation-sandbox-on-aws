@@ -7,7 +7,7 @@ import {
   type FileAssetSource,
   ISynthesisSession,
 } from "aws-cdk-lib";
-import { execSync } from "child_process";
+import AdmZip from "adm-zip";
 import fs from "fs";
 import path from "path";
 
@@ -36,12 +36,29 @@ export class SolutionsEngineeringSynthesizer extends DefaultStackSynthesizer {
       const zipFileName = `${path.basename(asset.fileName)}.zip`;
       const zipFilePath = path.join(this.outdir, zipFileName);
 
-      // prettier-ignore
-      execSync(`cd ${assetDir} && zip -r ${zipFilePath} .`, { // NOSONAR typescript:S4721 - this is required as part of the CDK synthesis process
-        stdio: "ignore",
-      });
+      // Use archiver for cross-platform zip creation
+      this.createZipArchive(assetDir, zipFilePath);
     }
     return fileAssetLocation;
+  }
+
+  private createZipArchive(sourceDir: string, outputPath: string): void {
+    const zip = new AdmZip();
+
+    // Log what we're zipping
+    const assetName = path.basename(sourceDir);
+    console.log(`Zipping asset: ${assetName}...`);
+
+    // Add the entire directory to the zip
+    zip.addLocalFolder(sourceDir);
+
+    // Write the zip file synchronously
+    zip.writeZip(outputPath);
+
+    // Log completion with file size
+    const stats = fs.statSync(outputPath);
+    const sizeKB = (stats.size / 1024).toFixed(2);
+    console.log(`✓ Created ${path.basename(outputPath)} (${sizeKB} KB)`);
   }
 
   /**

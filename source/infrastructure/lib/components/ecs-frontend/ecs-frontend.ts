@@ -29,7 +29,7 @@ export interface EcsFrontendProps {
   readonly privateEcrRepoRegion?: string;
   readonly restApiUrl: string;
   readonly cluster: ecs.ICluster;
-  readonly allowedCidrs?: string[];
+  readonly allowedCidr?: string; // Single CIDR for simplicity with CloudFormation parameters
 }
 
 export class EcsFrontend extends Construct {
@@ -60,19 +60,26 @@ export class EcsFrontend extends Construct {
       allowAllOutbound: true,
     });
 
-    // Allow HTTP/HTTPS from specified CIDRs or anywhere
-    const allowedCidrs = props.allowedCidrs || ["0.0.0.0/0"];
-    allowedCidrs.forEach((cidr, index) => {
-      albSecurityGroup.addIngressRule(
-        ec2.Peer.ipv4(cidr),
-        ec2.Port.tcp(80),
-        `Allow HTTP from ${cidr}`
-      );
-      albSecurityGroup.addIngressRule(
-        ec2.Peer.ipv4(cidr),
-        ec2.Port.tcp(443),
-        `Allow HTTPS from ${cidr}`
-      );
+    // Allow HTTP/HTTPS from specified CIDR or anywhere
+    // Note: We use CfnSecurityGroupIngress to support CloudFormation token CIDRs
+    const allowedCidr = props.allowedCidr || "0.0.0.0/0";
+
+    new ec2.CfnSecurityGroupIngress(this, "HttpIngress", {
+      groupId: albSecurityGroup.securityGroupId,
+      ipProtocol: "tcp",
+      fromPort: 80,
+      toPort: 80,
+      cidrIp: allowedCidr,
+      description: "Allow HTTP traffic",
+    });
+
+    new ec2.CfnSecurityGroupIngress(this, "HttpsIngress", {
+      groupId: albSecurityGroup.securityGroupId,
+      ipProtocol: "tcp",
+      fromPort: 443,
+      toPort: 443,
+      cidrIp: allowedCidr,
+      description: "Allow HTTPS traffic",
     });
 
     this.loadBalancer = new elbv2.ApplicationLoadBalancer(this, "LoadBalancer", {

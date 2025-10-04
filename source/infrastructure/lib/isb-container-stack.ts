@@ -63,10 +63,10 @@ export class IsbContainerStack extends Stack {
     });
 
     const allowListedCidr = new ParameterWithLabel(this, "AllowListedIPRanges", {
-      type: "CommaDelimitedList",
-      label: "Allow Listed IP Ranges",
-      description: "Comma-delimited list of CIDR blocks allowed to access the frontend",
+      label: "Allow Listed IP Range",
+      description: "CIDR block allowed to access the frontend ALB",
       default: "0.0.0.0/0",
+      allowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
     });
 
     const restApiUrl = new ParameterWithLabel(this, "RestApiUrl", {
@@ -79,8 +79,10 @@ export class IsbContainerStack extends Stack {
     applyIsbTag(this, namespaceParam.valueAsString);
 
     // Create VPC with public and private subnets
+    // Note: We use a fixed CIDR here because CDK cannot auto-subdivide parameter tokens
+    // The actual CIDR is controlled by the vpcCidr parameter at deploy time
     const vpc = new ec2.Vpc(this, "Vpc", {
-      ipAddresses: ec2.IpAddresses.cidr(vpcCidr.valueAsString),
+      ipAddresses: ec2.IpAddresses.cidr("10.0.0.0/16"),
       maxAzs: 2,
       natGateways: 1,
       subnetConfiguration: [
@@ -96,6 +98,10 @@ export class IsbContainerStack extends Stack {
         },
       ],
     });
+
+    // Override the VPC CIDR with the parameter value
+    const cfnVpc = vpc.node.defaultChild as ec2.CfnVPC;
+    cfnVpc.cidrBlock = vpcCidr.valueAsString;
 
     // Create ECS Cluster
     const cluster = new ecs.Cluster(this, "Cluster", {
@@ -131,7 +137,7 @@ export class IsbContainerStack extends Stack {
         privateEcrFrontendRepo: privateEcrFrontendRepo.valueAsString,
         privateEcrRepoRegion: privateEcrRepoRegion.valueAsString,
         restApiUrl: restApiUrl.valueAsString,
-        allowedCidrs: allowListedCidr.valueAsList,
+        allowedCidr: allowListedCidr.valueAsString,
       });
 
       // Output the frontend URL
