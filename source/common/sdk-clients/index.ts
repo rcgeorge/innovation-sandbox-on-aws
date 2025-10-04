@@ -188,7 +188,19 @@ export class IsbClients {
       USER_AGENT_EXTRA: string;
     },
     credentials?: AwsCredentialIdentity | AwsCredentialIdentityProvider,
+    region?: string,
   ): IdentitystoreClient {
+    // Don't cache if a custom region is specified to allow per-call regional clients
+    if (region) {
+      return tracer.captureAWSv3Client(
+        new IdentitystoreClient({
+          customUserAgent: env.USER_AGENT_EXTRA,
+          credentials,
+          region,
+        }),
+      );
+    }
+
     if (cachedIdentitystoreClient == null) {
       cachedIdentitystoreClient = tracer.captureAWSv3Client(
         new IdentitystoreClient({
@@ -203,7 +215,19 @@ export class IsbClients {
   public static ssoAdmin(
     env: { USER_AGENT_EXTRA: string },
     credentials?: AwsCredentialIdentity | AwsCredentialIdentityProvider,
+    region?: string,
   ): SSOAdminClient {
+    // Don't cache if a custom region is specified to allow per-call regional clients
+    if (region) {
+      return tracer.captureAWSv3Client(
+        new SSOAdminClient({
+          customUserAgent: env.USER_AGENT_EXTRA,
+          credentials,
+          region,
+        }),
+      );
+    }
+
     if (cachedSSOAdminClient == null) {
       cachedSSOAdminClient = tracer.captureAWSv3Client(
         new SSOAdminClient({

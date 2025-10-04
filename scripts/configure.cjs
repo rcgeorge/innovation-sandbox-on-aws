@@ -14,7 +14,7 @@ const path = require('path');
 
 // AWS SDK v3 imports
 const { STSClient, GetCallerIdentityCommand } = require('@aws-sdk/client-sts');
-const { SSOAdminClient, ListInstancesCommand } = require('@aws-sdk/client-sso-admin');
+const { SSOAdminClient, ListInstancesCommand, DescribeInstanceCommand } = require('@aws-sdk/client-sso-admin');
 const { OrganizationsClient, ListRootsCommand } = require('@aws-sdk/client-organizations');
 const { ECRClient, DescribeRepositoriesCommand, CreateRepositoryCommand, DescribeImagesCommand } = require('@aws-sdk/client-ecr');
 const { CloudFormationClient, DescribeStacksCommand } = require('@aws-sdk/client-cloudformation');
@@ -31,7 +31,10 @@ if (fs.existsSync(envPath)) {
   envContent.split(/\r?\n/).forEach(line => {
     const match = line.match(/^([^#=]+)=(.*)$/);
     if (match) {
-      existingEnv[match[1].trim()] = match[2].trim();
+      let value = match[2].trim();
+      // Remove surrounding quotes if present
+      value = value.replace(/^["']|["']$/g, '');
+      existingEnv[match[1].trim()] = value;
     }
   });
 }
@@ -49,6 +52,7 @@ function hasValidConfiguration() {
   // 3. Organization root ID or Parent OU ID
   // 4. Identity Store ID
   // 5. SSO Instance ARN
+  // Note: IDC_KMS_KEY_ARN is optional for backward compatibility
 
   const requiredFields = {
     'HUB_ACCOUNT_ID': '000000000000',
@@ -129,7 +133,16 @@ async function getIdentityCenterInfo() {
 
       // Support both commercial and GovCloud ARNs
       if (identityStoreId && instanceArn && instanceArn.match(/^arn:aws(-us-gov)?:sso:::instance\/(sso)?ins-/)) {
-        return { identityStoreId, instanceArn, region: null };
+        // Get KMS key ARN from instance details
+        let kmsKeyArn = null;
+        try {
+          const describeCommand = new DescribeInstanceCommand({ InstanceArn: instanceArn });
+          const describeResponse = await client.send(describeCommand);
+          kmsKeyArn = describeResponse.EncryptionConfigurationDetails?.KmsKeyArn || null;
+        } catch (error) {
+          // KMS key discovery is optional, continue without it
+        }
+        return { identityStoreId, instanceArn, kmsKeyArn, region: null };
       }
     }
   } catch (error) {
@@ -152,7 +165,16 @@ async function getIdentityCenterInfo() {
 
         // Support both commercial and GovCloud ARNs
         if (identityStoreId && instanceArn && instanceArn.match(/^arn:aws(-us-gov)?:sso:::instance\/(sso)?ins-/)) {
-          return { identityStoreId, instanceArn, region };
+          // Get KMS key ARN from instance details
+          let kmsKeyArn = null;
+          try {
+            const describeCommand = new DescribeInstanceCommand({ InstanceArn: instanceArn });
+            const describeResponse = await client.send(describeCommand);
+            kmsKeyArn = describeResponse.EncryptionConfigurationDetails?.KmsKeyArn || null;
+          } catch (error) {
+            // KMS key discovery is optional, continue without it
+          }
+          return { identityStoreId, instanceArn, kmsKeyArn, region };
         }
       }
     } catch (error) {
@@ -160,7 +182,7 @@ async function getIdentityCenterInfo() {
     }
   }
 
-  return { identityStoreId: null, instanceArn: null, region: null };
+  return { identityStoreId: null, instanceArn: null, kmsKeyArn: null, region: null };
 }
 
 // Function to get organization root ID using AWS SDK
@@ -329,46 +351,127 @@ async function main() {
     ]);
 
     if (!wantToEdit) {
-      // Before verifying ECR, check if we need to auto-detect and add missing ECR repos
+      console.log('\n🔍 Verifying configuration and auto-detecting missing values...\n');
+
+      let envContent = fs.readFileSync(envPath, 'utf-8');
+      let updated = false;
+
+      // Check and add missing KMS key ARN
+      if (!existingEnv.IDC_KMS_KEY_ARN || existingEnv.IDC_KMS_KEY_ARN.includes('00000000-0000-0000-0000-000000000000')) {
+        if (existingEnv.SSO_INSTANCE_ARN) {
+          // Get IDC region from existing config or detect it (defined outside try/catch for error message)
+          const idcRegion = existingEnv.IDC_REGION || getCurrentAwsRegion();
+
+          try {
+            console.log('🔍 Discovering IAM Identity Center KMS key...');
+            console.log(`   Using region: ${idcRegion}`);
+            console.log(`   SSO Instance ARN: ${existingEnv.SSO_INSTANCE_ARN}`);
+            const client = new SSOAdminClient({ region: idcRegion });
+            const describeCommand = new DescribeInstanceCommand({ InstanceArn: existingEnv.SSO_INSTANCE_ARN });
+            const describeResponse = await client.send(describeCommand);
+            const kmsKeyArn = describeResponse.EncryptionConfigurationDetails?.KmsKeyArn;
+
+            if (kmsKeyArn) {
+              console.log(`✓ Found KMS key: ${kmsKeyArn}`);
+              // Add or update the KMS key ARN in .env
+              if (envContent.includes('IDC_KMS_KEY_ARN=')) {
+                envContent = envContent.replace(/^IDC_KMS_KEY_ARN=.*/m, `IDC_KMS_KEY_ARN="${kmsKeyArn}"`);
+              } else {
+                // Insert after SSO_INSTANCE_ARN
+                envContent = envContent.replace(
+                  /^(SSO_INSTANCE_ARN=.*$)/m,
+                  `$1\nIDC_KMS_KEY_ARN="${kmsKeyArn}"`
+                );
+              }
+              updated = true;
+            } else {
+              console.log('✓ IAM Identity Center is using an AWS owned key (no KMS permissions needed)');
+              // Set a special value to indicate AWS owned key
+              if (envContent.includes('IDC_KMS_KEY_ARN=')) {
+                envContent = envContent.replace(/^IDC_KMS_KEY_ARN=.*/m, `IDC_KMS_KEY_ARN="AWS_OWNED_KEY"`);
+              } else {
+                // Insert after SSO_INSTANCE_ARN
+                envContent = envContent.replace(
+                  /^(SSO_INSTANCE_ARN=.*$)/m,
+                  `$1\nIDC_KMS_KEY_ARN="AWS_OWNED_KEY"`
+                );
+              }
+              updated = true;
+            }
+          } catch (error) {
+            console.log('⚠️  Could not auto-detect KMS key (permission denied)');
+            console.log('   Assuming AWS owned key (default configuration)...');
+
+            // Set AWS_OWNED_KEY as the default since most deployments use AWS owned keys
+            // and this is the safest assumption when we can't query the instance
+            if (envContent.includes('IDC_KMS_KEY_ARN=')) {
+              envContent = envContent.replace(/^IDC_KMS_KEY_ARN=.*/m, `IDC_KMS_KEY_ARN="AWS_OWNED_KEY"`);
+            } else {
+              // Insert after SSO_INSTANCE_ARN
+              envContent = envContent.replace(
+                /^(SSO_INSTANCE_ARN=.*$)/m,
+                `$1\nIDC_KMS_KEY_ARN="AWS_OWNED_KEY"`
+              );
+            }
+            updated = true;
+
+            console.log('✓ Set IDC_KMS_KEY_ARN="AWS_OWNED_KEY"');
+            console.log('\n   Note: If you are using a customer-managed KMS key, update .env with:');
+            console.log('   IDC_KMS_KEY_ARN="arn:aws-us-gov:kms:region:account:key/key-id"\n');
+          }
+        }
+      } else {
+        console.log('✓ KMS key already configured');
+      }
+
+      // Check and add missing ECR repos
       const missingEcrInEnv = !existingEnv.PRIVATE_ECR_REPO && !existingEnv.PRIVATE_ECR_FRONTEND_REPO;
 
       if (missingEcrInEnv && existingEnv.NAMESPACE) {
-        console.log('\n🔍 Checking for existing ECR repositories...');
+        console.log('🔍 Checking for existing ECR repositories...');
         const currentRegion = getCurrentAwsRegion();
         const ecrRegion = currentRegion || 'us-east-1';
-        const detectedEcrRepos = await detectExistingEcrRepos(existingEnv.NAMESPACE.replace(/["']/g, ''), ecrRegion);
+        const detectedEcrRepos = await detectExistingEcrRepos(existingEnv.NAMESPACE, ecrRegion);
 
         if (detectedEcrRepos.accountCleaner || detectedEcrRepos.frontend) {
-          // Read current .env content
-          let envContent = fs.readFileSync(envPath, 'utf-8');
-
           if (detectedEcrRepos.accountCleaner) {
             console.log(`✓ Found account cleaner ECR repository: ${detectedEcrRepos.accountCleaner.repoName}`);
             envContent = envContent.replace(/^# PRIVATE_ECR_REPO=.*/m, `PRIVATE_ECR_REPO="${detectedEcrRepos.accountCleaner.repoName}"`);
             envContent = envContent.replace(/^# PRIVATE_ECR_REPO_REGION=.*/m, `PRIVATE_ECR_REPO_REGION="${detectedEcrRepos.accountCleaner.region}"`);
+            updated = true;
           }
 
           if (detectedEcrRepos.frontend) {
             console.log(`✓ Found frontend ECR repository: ${detectedEcrRepos.frontend.repoName}`);
             envContent = envContent.replace(/^# PRIVATE_ECR_FRONTEND_REPO=.*/m, `PRIVATE_ECR_FRONTEND_REPO="${detectedEcrRepos.frontend.repoName}"`);
+            updated = true;
           }
-
-          // Write updated .env
-          fs.writeFileSync(envPath, envContent);
-          console.log('✓ Updated .env file with detected ECR repositories\n');
-
-          // Reload existingEnv with new values
-          existingEnv = {};
-          const updatedEnvContent = fs.readFileSync(envPath, 'utf-8');
-          updatedEnvContent.split(/\r?\n/).forEach(line => {
-            const match = line.match(/^([^#=]+)=(.*)$/);
-            if (match) {
-              existingEnv[match[1].trim()] = match[2].trim();
-            }
-          });
         } else {
-          console.log('⚠️  No existing ECR repositories found for this namespace\n');
+          console.log('⚠️  No existing ECR repositories found for this namespace');
         }
+      } else if (existingEnv.PRIVATE_ECR_REPO || existingEnv.PRIVATE_ECR_FRONTEND_REPO) {
+        console.log('✓ ECR repositories already configured');
+      }
+
+      // Write updated .env if changes were made
+      if (updated) {
+        fs.writeFileSync(envPath, envContent);
+        console.log('\n✅ Updated .env file with auto-detected values\n');
+
+        // Reload existingEnv with new values
+        existingEnv = {};
+        const updatedEnvContent = fs.readFileSync(envPath, 'utf-8');
+        updatedEnvContent.split(/\r?\n/).forEach(line => {
+          const match = line.match(/^([^#=]+)=(.*)$/);
+          if (match) {
+            let value = match[2].trim();
+            // Remove surrounding quotes if present
+            value = value.replace(/^["']|["']$/g, '');
+            existingEnv[match[1].trim()] = value;
+          }
+        });
+      } else {
+        console.log('\n✅ Configuration is up to date\n');
       }
 
       // User doesn't want to edit - verify and deploy ECR if configured
@@ -634,6 +737,45 @@ async function main() {
       // Support both commercial (arn:aws:sso:::) and GovCloud (arn:aws-us-gov:sso:::) ARNs
       if (!input.match(/^arn:aws(-us-gov)?:sso:::instance\/(sso)?ins-/)) {
         return 'Must be a valid SSO instance ARN (e.g., arn:aws:sso:::instance/ssoins-...)';
+      }
+      return true;
+    }
+  },
+  {
+    type: 'input',
+    name: 'IDC_KMS_KEY_ARN',
+    message: 'IAM Identity Center KMS Key ARN (for encryption):',
+    default: async (answers) => {
+      if (existingEnv.IDC_KMS_KEY_ARN && !existingEnv.IDC_KMS_KEY_ARN.includes('00000000-0000-0000-0000-000000000000')) {
+        return existingEnv.IDC_KMS_KEY_ARN;
+      }
+      if (identityCenter.kmsKeyArn) return identityCenter.kmsKeyArn;
+
+      // Try to discover from SSO instance ARN
+      if (answers.SSO_INSTANCE_ARN) {
+        try {
+          const region = answers.IDC_REGION || await getCurrentAwsRegion();
+          const client = new SSOAdminClient({ region });
+          const describeCommand = new DescribeInstanceCommand({ InstanceArn: answers.SSO_INSTANCE_ARN });
+          const describeResponse = await client.send(describeCommand);
+          const kmsKeyArn = describeResponse.EncryptionConfigurationDetails?.KmsKeyArn;
+          if (kmsKeyArn) {
+            return kmsKeyArn;
+          }
+        } catch (error) {
+          // Silently fail
+        }
+      }
+
+      return undefined; // No default if not detected
+    },
+    validate: (input) => {
+      if (!input || input.trim() === '') {
+        return 'KMS Key ARN is required for IAM Identity Center encryption';
+      }
+      // Support both commercial and GovCloud ARNs
+      if (!input.match(/^arn:aws(-us-gov)?:kms:[a-z0-9-]+:\d{12}:key\/[a-f0-9-]+$/)) {
+        return 'Must be a valid KMS key ARN (e.g., arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012)';
       }
       return true;
     }
@@ -943,6 +1085,7 @@ async function main() {
     envContent = envContent.replace(/^AWS_REGIONS=.*/m, `AWS_REGIONS="${answers.AWS_REGIONS}"`);
     envContent = envContent.replace(/^IDENTITY_STORE_ID=.*/m, `IDENTITY_STORE_ID="${answers.IDENTITY_STORE_ID}"`);
     envContent = envContent.replace(/^SSO_INSTANCE_ARN=.*/m, `SSO_INSTANCE_ARN="${answers.SSO_INSTANCE_ARN}"`);
+    envContent = envContent.replace(/^IDC_KMS_KEY_ARN=.*/m, `IDC_KMS_KEY_ARN="${answers.IDC_KMS_KEY_ARN}"`);
     envContent = envContent.replace(/^ADMIN_GROUP_NAME=.*/m, `ADMIN_GROUP_NAME="${answers.ADMIN_GROUP_NAME}"`);
     envContent = envContent.replace(/^MANAGER_GROUP_NAME=.*/m, `MANAGER_GROUP_NAME="${answers.MANAGER_GROUP_NAME}"`);
     envContent = envContent.replace(/^USER_GROUP_NAME=.*/m, `USER_GROUP_NAME="${answers.USER_GROUP_NAME}"`);

@@ -60,6 +60,7 @@ export type IdcConfigurerResourceProperties = {
   namespace: string;
   ssoInstanceArn: string;
   identityStoreId: string;
+  idcRegion: string;
   adminGroupName: string;
   managerGroupName: string;
   userGroupName: string;
@@ -79,8 +80,20 @@ async function lambdaHandler(
   context: Context & ValidatedEnvironment<IdcConfigurerLambdaEnvironment>,
 ): Promise<CdkCustomResourceResponse> {
   try {
-    const identityStoreClient = IsbClients.identityStore(context.env);
-    const ssoAdminClient = IsbClients.ssoAdmin(context.env);
+    // Extract the IDC region from the custom resource properties
+    // IAM Identity Center APIs must be called in the region where IDC is deployed
+    const idcRegion = event.ResourceProperties.idcRegion;
+
+    const identityStoreClient = IsbClients.identityStore(
+      context.env,
+      undefined,
+      idcRegion,
+    );
+    const ssoAdminClient = IsbClients.ssoAdmin(
+      context.env,
+      undefined,
+      idcRegion,
+    );
 
     switch (event.RequestType) {
       case "Create":
@@ -318,6 +331,10 @@ async function createOrGetPermissionSet(
 ) {
   const truncatedName = params.name.slice(0, PERMISSION_SET_NAME_MAX_LENGTH);
 
+  // Extract partition from SSO instance ARN (e.g., arn:aws:sso or arn:aws-us-gov:sso)
+  const partition = params.ssoInstanceArn.split(":")[1];
+  const adminPolicyArn = `arn:${partition}:iam::aws:policy/AdministratorAccess`;
+
   try {
     const createPermissionSetResponse = await ssoAdminGlobalThrottle(() =>
       client.send(
@@ -341,11 +358,13 @@ async function createOrGetPermissionSet(
           InstanceArn: params.ssoInstanceArn,
           PermissionSetArn:
             createPermissionSetResponse.PermissionSet!.PermissionSetArn!,
-          ManagedPolicyArn: "arn:aws:iam::aws:policy/AdministratorAccess",
+          ManagedPolicyArn: adminPolicyArn,
         }),
       ),
     )();
-    logger.info("Successfully attached admin policy");
+    logger.info("Successfully attached admin policy", {
+      managedPolicyArn: adminPolicyArn,
+    });
 
     return createPermissionSetResponse;
   } catch (error: any) {

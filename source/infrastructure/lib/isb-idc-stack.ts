@@ -42,6 +42,20 @@ export class IsbIdcStack extends Stack {
       allowedPattern: "^arn:aws(-us-gov)?:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$",
     });
 
+    const idcRegion = new ParameterWithLabel(this, "IdcRegion", {
+      label: "IDC Region",
+      description:
+        "The AWS region where IAM Identity Center is deployed (e.g., us-east-1, us-gov-west-1)",
+      allowedPattern: "^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$",
+    });
+
+    const idcKmsKeyArn = new ParameterWithLabel(this, "IdcKmsKeyArn", {
+      label: "IDC KMS Key ARN",
+      description:
+        "The ARN of the KMS key used by IAM Identity Center for encryption (e.g., arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012). Use 'AWS_OWNED_KEY' if using AWS owned key.",
+      allowedPattern: "^(AWS_OWNED_KEY|arn:aws(-us-gov)?:kms:[a-z0-9-]+:\\d{12}:key/[a-f0-9-]+)$",
+    });
+
     const adminGroupName = new OptionalParameter(this, "AdminGroupName", {
       label: "Admin Group Name (Optional)",
       description:
@@ -70,6 +84,8 @@ export class IsbIdcStack extends Stack {
         hubAccountIdParam.hubAccountId,
         identityStoreId,
         ssoInstanceArn,
+        idcRegion,
+        idcKmsKeyArn,
         adminGroupName,
         managerGroupName,
         userGroupName,
@@ -80,6 +96,8 @@ export class IsbIdcStack extends Stack {
       hubAccountId: hubAccountIdParam.hubAccountId.valueAsString,
       identityStoreId: identityStoreId.valueAsString,
       ssoInstanceArn: ssoInstanceArn.valueAsString,
+      idcRegion: idcRegion.valueAsString,
+      idcKmsKeyArn: idcKmsKeyArn.valueAsString,
       adminGroupName: adminGroupName.resolve(),
       managerGroupName: managerGroupName.resolve(),
       userGroupName: userGroupName.resolve(),

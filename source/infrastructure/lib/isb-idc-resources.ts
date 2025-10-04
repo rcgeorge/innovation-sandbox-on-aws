@@ -27,6 +27,8 @@ export interface IsbIdcResourcesProps {
   hubAccountId: string;
   identityStoreId: string;
   ssoInstanceArn: string;
+  idcRegion: string;
+  idcKmsKeyArn: string;
   adminGroupName: string;
   managerGroupName: string;
   userGroupName: string;
@@ -49,6 +51,8 @@ export class IsbIdcResources {
       namespace: props.namespace,
       ssoInstanceArn: props.ssoInstanceArn,
       identityStoreId: props.identityStoreId,
+      idcRegion: props.idcRegion,
+      idcKmsKeyArn: props.idcKmsKeyArn,
       adminGroupName: props.adminGroupName,
       managerGroupName: props.managerGroupName,
       userGroupName: props.userGroupName,
@@ -213,14 +217,22 @@ export class IsbIdcResources {
 
     ssmParamIdcConfiguration.grantRead(idcRole);
 
+    // Create RAM permission ARN with correct partition (aws or aws-us-gov)
+    const ramPermissionArn = Stack.of(scope).formatArn({
+      service: "ram",
+      region: "",
+      account: "aws",
+      resource: "permission",
+      resourceName: "AWSRAMDefaultPermissionSSMParameterReadOnly",
+      arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+    });
+
     new aws_ram.CfnResourceShare(scope, "IdcConfigParameterShare", {
       name: `Isb-${props.namespace}-IdcConfigShare`,
       principals: [props.hubAccountId],
       resourceArns: [ssmParamIdcConfiguration.parameterArn],
       allowExternalPrincipals: false,
-      permissionArns: [
-        "arn:aws:ram::aws:permission/AWSRAMDefaultPermissionSSMParameterReadOnly",
-      ],
+      permissionArns: [ramPermissionArn],
     });
   }
 }

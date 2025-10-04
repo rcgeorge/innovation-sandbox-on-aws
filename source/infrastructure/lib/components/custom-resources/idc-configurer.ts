@@ -12,6 +12,8 @@ export type IdcConfigurerProps = {
   namespace: string;
   identityStoreId: string;
   ssoInstanceArn: string;
+  idcRegion: string;
+  idcKmsKeyArn: string;
   adminGroupName: string;
   managerGroupName: string;
   userGroupName: string;
@@ -55,6 +57,7 @@ export class IdcConfigurer extends Construct {
           namespace: props.namespace,
           identityStoreId: props.identityStoreId,
           ssoInstanceArn: props.ssoInstanceArn,
+          idcRegion: props.idcRegion,
           adminGroupName: props.adminGroupName,
           managerGroupName: props.managerGroupName,
           userGroupName: props.userGroupName,
@@ -144,5 +147,25 @@ export class IdcConfigurer extends Construct {
         ],
       }),
     );
+
+    // Add KMS decrypt permission required for sso:CreatePermissionSet
+    // Only add if a customer-managed or AWS-managed key ARN is provided
+    // (AWS owned keys don't have ARNs and don't require explicit permissions)
+    //
+    // Check if the KMS key ARN is a real ARN (starts with "arn:")
+    // If it's "AWS_OWNED_KEY" or a placeholder, skip adding the policy
+    const isRealKmsKeyArn =
+      props.idcKmsKeyArn &&
+      props.idcKmsKeyArn.startsWith("arn:") &&
+      !props.idcKmsKeyArn.includes("00000000-0000-0000-0000-000000000000");
+
+    if (isRealKmsKeyArn) {
+      lambdaFunction.addToRolePolicy(
+        new PolicyStatement({
+          actions: ["kms:Decrypt"],
+          resources: [props.idcKmsKeyArn],
+        }),
+      );
+    }
   }
 }
