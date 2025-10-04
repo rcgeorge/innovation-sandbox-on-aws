@@ -64,13 +64,38 @@ npm install
 
 ## Environment Variables
 
-Before you start working from the Innovation Sandbox on AWS repository you must first configure your environment. Use the following command to generate a `.env` file to begin:
+Before you start working from the Innovation Sandbox on AWS repository you must first configure your environment. You have two options:
+
+### Option 1: Interactive Configuration Wizard (Recommended)
+
+Use the interactive wizard to be prompted for all required values:
+
+```shell
+npm run configure
+```
+
+The wizard will:
+- **Auto-detect** your AWS environment:
+  - Current AWS account ID
+  - Configured AWS region
+  - IAM Identity Center instance information
+  - AWS Organizations root ID
+- Let you choose between single-account or multi-account deployment
+- Use detected values as smart defaults to minimize manual input
+- Guide you through all required configuration values
+- Validate inputs to ensure proper format
+- Preserve existing values if you're reconfiguring
+- Generate a properly formatted `.env` file
+
+### Option 2: Manual Configuration
+
+Generate a blank `.env` file from the template and manually edit it:
 
 ```shell
 npm run env:init
 ```
 
-In the `.env` file configure the required values. The file provides comments as to what each environment variable does. The optional ones are not required to deploy the solution.
+Then open the `.env` file and configure the required values. The file provides comments explaining each environment variable. Optional variables are not required to deploy the solution.
 
 ## Deploy the Solution
 

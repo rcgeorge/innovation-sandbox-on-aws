@@ -38,9 +38,9 @@ export class IsbAccountPoolStack extends Stack {
         description:
           "Provide list of AWS Regions to limit the use to specific regions.",
         allowedPattern:
-          "^[a-z]{2}(-[a-z]+-\\d{1})(,[ ]*[a-z]{2}(-[a-z]+-\\d{1}))*$",
+          "^[a-z]{2}(-gov)?(-[a-z]+-\\d{1})(,[ ]*[a-z]{2}(-gov)?(-[a-z]+-\\d{1}))*$",
         constraintDescription:
-          "Must be a comma-separated list of valid AWS Region codes, e.g., us-east-1,eu-west-1",
+          "Must be a comma-separated list of valid AWS Region codes, e.g., us-east-1,eu-west-1,us-gov-east-1",
       },
     );
 
