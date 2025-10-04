@@ -45,12 +45,14 @@ For more details, please refer to the [Architecture Overview](https://docs.aws.a
 
 In order to test, build, and deploy the solution from source the following prerequisites will be required for your development environment:
 
-- MacOS or Amazon Linux 2 Operating System
+- MacOS, Amazon Linux 2, or Windows Operating System
 - Cloned Repository
 - Node 22
 - Python (Optional)
 - Pre-Commit (Optional)
 - Docker (Optional)
+
+> **Note for Windows Users:** The solution now supports Windows development environments. All npm scripts have been updated to work cross-platform. The bash scripts in the `deployment/` folder are still Linux/MacOS only, but core development and deployment commands work on Windows.
 
 Once your development environment meets the minimum requirements install the necessary dependencies, navigate to the root of the repository and run:
 
