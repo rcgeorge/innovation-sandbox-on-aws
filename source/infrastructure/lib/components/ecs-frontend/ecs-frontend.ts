@@ -15,6 +15,7 @@
  */
 
 import { Duration } from "aws-cdk-lib";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
@@ -30,6 +31,7 @@ export interface EcsFrontendProps {
   readonly restApiUrl: string;
   readonly cluster: ecs.ICluster;
   readonly allowedCidr?: string; // Single CIDR for simplicity with CloudFormation parameters
+  readonly certificateArn?: string; // Optional ACM certificate ARN for HTTPS
 }
 
 export class EcsFrontend extends Construct {
@@ -178,12 +180,40 @@ export class EcsFrontend extends Construct {
       deregistrationDelay: Duration.seconds(30),
     });
 
-    // Add HTTP listener (can be upgraded to HTTPS with ACM certificate)
-    this.loadBalancer.addListener("HttpListener", {
-      port: 80,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      defaultTargetGroups: [targetGroup],
-    });
+    // Configure listeners based on certificate availability
+    if (props.certificateArn && props.certificateArn.trim() !== "") {
+      // HTTPS listener with ACM certificate
+      const certificate = acm.Certificate.fromCertificateArn(
+        this,
+        "Certificate",
+        props.certificateArn
+      );
+
+      this.loadBalancer.addListener("HttpsListener", {
+        port: 443,
+        protocol: elbv2.ApplicationProtocol.HTTPS,
+        certificates: [certificate],
+        defaultTargetGroups: [targetGroup],
+      });
+
+      // HTTP listener that redirects to HTTPS
+      this.loadBalancer.addListener("HttpListener", {
+        port: 80,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        defaultAction: elbv2.ListenerAction.redirect({
+          protocol: "HTTPS",
+          port: "443",
+          permanent: true,
+        }),
+      });
+    } else {
+      // HTTP only (no certificate provided)
+      this.loadBalancer.addListener("HttpListener", {
+        port: 80,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        defaultTargetGroups: [targetGroup],
+      });
+    }
 
     // Enable auto-scaling
     const scaling = this.service.autoScaleTaskCount({

@@ -75,6 +75,12 @@ export class IsbContainerStack extends Stack {
       default: "",
     });
 
+    const certificateArn = new ParameterWithLabel(this, "CertificateArn", {
+      label: "ACM Certificate ARN (Optional)",
+      description: "ARN of ACM certificate for HTTPS on the ALB. Leave empty for HTTP only.",
+      default: "",
+    });
+
     // Apply tagging
     applyIsbTag(this, namespaceParam.namespace.valueAsString);
 
@@ -138,11 +144,13 @@ export class IsbContainerStack extends Stack {
         privateEcrRepoRegion: privateEcrRepoRegion.valueAsString,
         restApiUrl: restApiUrl.valueAsString,
         allowedCidr: allowListedCidr.valueAsString,
+        certificateArn: certificateArn.valueAsString,
       });
 
-      // Output the frontend URL
+      // Output the frontend URL (HTTPS if certificate provided, otherwise HTTP)
+      const protocol = certificateArn.valueAsString && certificateArn.valueAsString.trim() !== "" ? "https" : "http";
       new CfnOutput(this, "FrontendUrl", {
-        value: `http://${frontend.loadBalancer.loadBalancerDnsName}`,
+        value: `${protocol}://${frontend.loadBalancer.loadBalancerDnsName}`,
         description: "Frontend Application URL",
         exportName: `${namespaceParam.namespace.valueAsString}-FrontendUrl`,
       });
