@@ -135,6 +135,25 @@ npm run deploy:data
 npm run deploy:compute
 ```
 
+**For GovCloud or ECS-based Deployments:**
+
+If deploying to GovCloud regions or using ECS for frontend hosting instead of CloudFront, use the container stack:
+
+```shell
+npm run deploy:account-pool
+npm run deploy:idc
+npm run deploy:data
+npm run deploy:container
+```
+
+The container stack (`InnovationSandbox-Container`) deploys:
+- **ECS Fargate** for frontend hosting (replaces CloudFront which is unavailable in GovCloud)
+- **Application Load Balancer** for ingress
+- **Account cleaner ECS tasks** (same as compute stack)
+- All backend Lambda functions and APIs (same as compute stack)
+
+> **Note:** The container stack is designed for regions where CloudFront is not available (e.g., AWS GovCloud). For commercial regions, use the standard compute stack which uses CloudFront for better performance and lower cost.
+
 ### Post Deployment Tasks
 
 Before the solution is fully functional the post deployment tasks must be completed. See the [implementation guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/post-deployment-configuration-tasks.html) for more details.
@@ -237,11 +256,16 @@ npm run destroy:all
 If you had used a multi-account deployment or only want to destroy certain stacks you can use the following commands:
 
 ```shell
-npm run destroy:account-pool
-npm run destroy:idc
+npm run destroy:compute  # For standard CloudFront deployment
+# OR
+npm run destroy:container  # For GovCloud/ECS deployment
+
 npm run destroy:data
-npm run destroy:compute
+npm run destroy:idc
+npm run destroy:account-pool
 ```
+
+> **Note:** Only destroy either the compute stack OR the container stack, not both. Destroy in reverse order of deployment.
 
 ## Cost Scaling
 
