@@ -9,6 +9,7 @@ import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-com
 import { IsbContainerStack } from "@amzn/innovation-sandbox-infrastructure/isb-container-stack";
 import { IsbDataStack } from "@amzn/innovation-sandbox-infrastructure/isb-data-stack";
 import { IsbIdcStack } from "@amzn/innovation-sandbox-infrastructure/isb-idc-stack";
+import { IsbPostDeploymentStack } from "@amzn/innovation-sandbox-infrastructure/isb-post-deployment-stack";
 import { SolutionsEngineeringSynthesizer } from "@amzn/innovation-sandbox-infrastructure/stack-synthesizers/solutions-engineering-synthesizer";
 
 const app = new cdk.App({
@@ -49,5 +50,10 @@ new IsbComputeStack(app, "InnovationSandbox-Compute", {
 
 new IsbContainerStack(app, "InnovationSandbox-Container", {
   description: `(${context.solutionId}-ContainerStack) ${context.solutionName} ${context.version}`,
+  synthesizer: synthesizer,
+});
+
+new IsbPostDeploymentStack(app, "InnovationSandbox-PostDeployment", {
+  description: `(${context.solutionId}-PostDeploymentStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
