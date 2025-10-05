@@ -30,6 +30,7 @@ export interface AccountLifeCycleLambdaProps {
   namespace: string;
   orgManagementAccountId: string;
   idcAccountId: string;
+  isGovCloud?: boolean;
 }
 
 export class AccountLifecycleManagementLambda extends Construct {
@@ -105,6 +106,7 @@ export class AccountLifecycleManagementLambda extends Construct {
       namespace: props.namespace,
       eventBus: props.isbEventBus,
       lambdaFunction: lambda.lambdaFunction,
+      isGovCloud: props.isGovCloud,
       sqsQueueProps: {
         maxEventAge: Duration.hours(4),
         retryAttempts: 3,

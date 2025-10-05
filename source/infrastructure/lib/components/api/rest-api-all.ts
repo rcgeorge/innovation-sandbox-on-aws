@@ -154,14 +154,19 @@ export class RestApi extends ApiGatewayRestApi {
         metricName: "IsbWebAclMetric",
         sampledRequestsEnabled: true,
       },
-      customResponseBodies: {
-        TooManyRequests: {
-          contentType: "APPLICATION_JSON",
-          content: JSON.stringify({
-            message: "Too many requests",
+      // GovCloud may not support customResponseBodies
+      ...(props.isGovCloud
+        ? {}
+        : {
+            customResponseBodies: {
+              TooManyRequests: {
+                contentType: "APPLICATION_JSON",
+                content: JSON.stringify({
+                  message: "Too many requests",
+                }),
+              },
+            },
           }),
-        },
-      },
       rules: [
         {
           name: "IsbAllowListRule",
@@ -184,34 +189,39 @@ export class RestApi extends ApiGatewayRestApi {
             sampledRequestsEnabled: true,
           },
         },
-        {
-          name: "IsbRateLimitRule",
-          priority: 1,
-          action: {
-            block: {
-              customResponse: {
-                responseCode: 429,
-                customResponseBodyKey: "TooManyRequests",
+        // Rate limiting with evaluationWindowSec may not be supported in GovCloud
+        ...(props.isGovCloud
+          ? []
+          : [
+              {
+                name: "IsbRateLimitRule",
+                priority: 1,
+                action: {
+                  block: {
+                    customResponse: {
+                      responseCode: 429,
+                      customResponseBodyKey: "TooManyRequests",
+                    },
+                  },
+                },
+                statement: {
+                  rateBasedStatement: {
+                    evaluationWindowSec: 60,
+                    limit: 200,
+                    aggregateKeyType: "FORWARDED_IP",
+                    forwardedIpConfig: {
+                      headerName: "X-Forwarded-For",
+                      fallbackBehavior: "MATCH",
+                    },
+                  },
+                },
+                visibilityConfig: {
+                  cloudWatchMetricsEnabled: true,
+                  metricName: "IsbRateLimitRuleMetric",
+                  sampledRequestsEnabled: true,
+                },
               },
-            },
-          },
-          statement: {
-            rateBasedStatement: {
-              evaluationWindowSec: 60,
-              limit: 200,
-              aggregateKeyType: "FORWARDED_IP",
-              forwardedIpConfig: {
-                headerName: "X-Forwarded-For",
-                fallbackBehavior: "MATCH",
-              },
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: "IsbRateLimitRuleMetric",
-            sampledRequestsEnabled: true,
-          },
-        },
+            ]),
         {
           name: "AWSManagedRulesCommonRuleSet",
           priority: 2,
@@ -220,14 +230,19 @@ export class RestApi extends ApiGatewayRestApi {
             managedRuleGroupStatement: {
               name: "AWSManagedRulesCommonRuleSet",
               vendorName: "AWS",
-              excludedRules: [
-                {
-                  name: "SizeRestrictions_BODY",
-                },
-                {
-                  name: "CrossSiteScripting_BODY",
-                },
-              ],
+              // GovCloud may not support excludedRules
+              ...(props.isGovCloud
+                ? {}
+                : {
+                    excludedRules: [
+                      {
+                        name: "SizeRestrictions_BODY",
+                      },
+                      {
+                        name: "CrossSiteScripting_BODY",
+                      },
+                    ],
+                  }),
             },
           },
           visibilityConfig: {
@@ -236,38 +251,48 @@ export class RestApi extends ApiGatewayRestApi {
             sampledRequestsEnabled: true,
           },
         },
-        {
-          name: "AWSManagedRulesAmazonIpReputationList",
-          priority: 3,
-          overrideAction: { none: {} },
-          statement: {
-            managedRuleGroupStatement: {
-              name: "AWSManagedRulesAmazonIpReputationList",
-              vendorName: "AWS",
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: "AWSManagedRulesAmazonIpReputationListMetric",
-            sampledRequestsEnabled: true,
-          },
-        },
-        {
-          name: "AWSManagedRulesAnonymousIpList",
-          priority: 4,
-          overrideAction: { none: {} },
-          statement: {
-            managedRuleGroupStatement: {
-              name: "AWSManagedRulesAnonymousIpList",
-              vendorName: "AWS",
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: "AWSManagedRulesAnonymousIpListMetric",
-            sampledRequestsEnabled: true,
-          },
-        },
+        // AWSManagedRulesAmazonIpReputationList is not supported in GovCloud
+        ...(props.isGovCloud
+          ? []
+          : [
+              {
+                name: "AWSManagedRulesAmazonIpReputationList",
+                priority: 3,
+                overrideAction: { none: {} },
+                statement: {
+                  managedRuleGroupStatement: {
+                    name: "AWSManagedRulesAmazonIpReputationList",
+                    vendorName: "AWS",
+                  },
+                },
+                visibilityConfig: {
+                  cloudWatchMetricsEnabled: true,
+                  metricName: "AWSManagedRulesAmazonIpReputationListMetric",
+                  sampledRequestsEnabled: true,
+                },
+              },
+            ]),
+        // AWSManagedRulesAnonymousIpList is not supported in GovCloud
+        ...(props.isGovCloud
+          ? []
+          : [
+              {
+                name: "AWSManagedRulesAnonymousIpList",
+                priority: 4,
+                overrideAction: { none: {} },
+                statement: {
+                  managedRuleGroupStatement: {
+                    name: "AWSManagedRulesAnonymousIpList",
+                    vendorName: "AWS",
+                  },
+                },
+                visibilityConfig: {
+                  cloudWatchMetricsEnabled: true,
+                  metricName: "AWSManagedRulesAnonymousIpListMetric",
+                  sampledRequestsEnabled: true,
+                },
+              },
+            ]),
       ],
     });
 

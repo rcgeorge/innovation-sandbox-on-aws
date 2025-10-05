@@ -73,6 +73,7 @@ export class IsbComputeResources {
       kmsKey,
       orgMgtAccountId: props.orgMgtAccountId,
       idcAccountId: props.idcAccountId,
+      isGovCloud: props.isGovCloud,
     });
 
     new AccountCleaner(scope, "AccountCleaner", {

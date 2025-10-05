@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
-import { Duration } from "aws-cdk-lib";
+import { Duration, Aspects, IAspect } from "aws-cdk-lib";
 import { EventBus, Rule, RuleProps } from "aws-cdk-lib/aws-events";
 import { SqsQueue, SqsQueueProps } from "aws-cdk-lib/aws-events-targets";
 import { ServicePrincipal } from "aws-cdk-lib/aws-iam";
-import { IFunction } from "aws-cdk-lib/aws-lambda";
+import { IFunction, CfnEventSourceMapping } from "aws-cdk-lib/aws-lambda";
 import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { IQueue, Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
-import { Construct } from "constructs";
+import { Construct, IConstruct } from "constructs";
 
 interface EventsToSqsToLambdaProps {
   namespace: string;
@@ -18,6 +18,18 @@ interface EventsToSqsToLambdaProps {
   sqsQueueProps: SqsQueueProps;
   ruleProps: RuleProps;
   queueProps?: Partial<IQueue>;
+  isGovCloud?: boolean;
+}
+
+/**
+ * Aspect to remove tags from EventSourceMapping resources in GovCloud
+ */
+class RemoveEventSourceMappingTagsAspect implements IAspect {
+  visit(node: IConstruct): void {
+    if (node instanceof CfnEventSourceMapping) {
+      node.addPropertyDeletionOverride("Tags");
+    }
+  }
 }
 
 export class EventsToSqsToLambda extends Construct {
@@ -55,11 +67,16 @@ export class EventsToSqsToLambda extends Construct {
     );
     this.queue.grantSendMessages(new ServicePrincipal("events.amazonaws.com"));
 
-    props.lambdaFunction.addEventSource(
-      new SqsEventSource(this.queue, {
-        batchSize: 1,
-      }),
-    );
+    const eventSource = new SqsEventSource(this.queue, {
+      batchSize: 1,
+    });
+    props.lambdaFunction.addEventSource(eventSource);
+
+    // GovCloud doesn't support tags on EventSourceMapping
+    // Use an Aspect to remove tags from all EventSourceMapping resources
+    if (props.isGovCloud) {
+      Aspects.of(props.lambdaFunction).add(new RemoveEventSourceMappingTagsAspect());
+    }
 
     kmsKey.grantEncryptDecrypt(new ServicePrincipal("events.amazonaws.com"));
     kmsKey.grantEncryptDecrypt(new ServicePrincipal("sqs.amazonaws.com"));

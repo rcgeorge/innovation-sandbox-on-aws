@@ -22,6 +22,7 @@ export type IsbEventBackplaneProps = {
   kmsKey: Key;
   readonly orgMgtAccountId: string;
   readonly idcAccountId: string;
+  readonly isGovCloud?: boolean;
 };
 
 /**
@@ -35,15 +36,22 @@ export class IsbInternalCore {
   readonly accountDriftMonitoringLambda;
 
   constructor(scope: Construct, props: IsbEventBackplaneProps) {
-    this.eventBus = new EventBus(scope, "ISBEventBus", {
-      description: "core event bus for all ISB activity",
-      kmsKey: props.kmsKey,
-      deadLetterQueue: new Queue(scope, "ISBEventBusDLQ", {
-        queueName: `ISB-${props.namespace}-ISBEventBus-DLQ`,
-        encryption: QueueEncryption.KMS,
-        encryptionMasterKey: props.kmsKey,
-      }),
-    });
+    // GovCloud doesn't support description, kmsKey, or deadLetterQueue on EventBus
+    this.eventBus = new EventBus(
+      scope,
+      "ISBEventBus",
+      props.isGovCloud
+        ? {}
+        : {
+            description: "core event bus for all ISB activity",
+            kmsKey: props.kmsKey,
+            deadLetterQueue: new Queue(scope, "ISBEventBusDLQ", {
+              queueName: `ISB-${props.namespace}-ISBEventBus-DLQ`,
+              encryption: QueueEncryption.KMS,
+              encryptionMasterKey: props.kmsKey,
+            }),
+          },
+    );
 
     IsbComputeResources.globalLogGroup.addToResourcePolicy(
       new PolicyStatement({
@@ -105,6 +113,7 @@ export class IsbInternalCore {
           namespace: props.namespace,
           orgManagementAccountId: props.orgMgtAccountId,
           idcAccountId: props.idcAccountId,
+          isGovCloud: props.isGovCloud,
         },
       );
 
