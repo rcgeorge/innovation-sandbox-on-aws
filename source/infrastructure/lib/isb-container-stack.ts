@@ -76,7 +76,7 @@ export class IsbContainerStack extends Stack {
     });
 
     // Apply tagging
-    applyIsbTag(this, namespaceParam.valueAsString);
+    applyIsbTag(this, namespaceParam.namespace.valueAsString);
 
     // Create VPC with public and private subnets
     // Note: We use a fixed CIDR here because CDK cannot auto-subdivide parameter tokens
@@ -106,7 +106,7 @@ export class IsbContainerStack extends Stack {
     // Create ECS Cluster
     const cluster = new ecs.Cluster(this, "Cluster", {
       vpc: vpc,
-      clusterName: `${namespaceParam.valueAsString}-cluster`,
+      clusterName: `${namespaceParam.namespace.valueAsString}-cluster`,
       containerInsights: true,
     });
 
@@ -119,7 +119,7 @@ export class IsbContainerStack extends Stack {
     let accountCleaner: EcsAccountCleaner | undefined;
     if (privateEcrRepo.valueAsString) {
       accountCleaner = new EcsAccountCleaner(this, "AccountCleaner", {
-        namespace: namespaceParam.valueAsString,
+        namespace: namespaceParam.namespace.valueAsString,
         vpc: vpc,
         cluster: cluster,
         privateEcrRepo: privateEcrRepo.valueAsString,
@@ -131,7 +131,7 @@ export class IsbContainerStack extends Stack {
     let frontend: EcsFrontend | undefined;
     if (privateEcrFrontendRepo.valueAsString && restApiUrl.valueAsString) {
       frontend = new EcsFrontend(this, "Frontend", {
-        namespace: namespaceParam.valueAsString,
+        namespace: namespaceParam.namespace.valueAsString,
         vpc: vpc,
         cluster: cluster,
         privateEcrFrontendRepo: privateEcrFrontendRepo.valueAsString,
@@ -144,7 +144,7 @@ export class IsbContainerStack extends Stack {
       new CfnOutput(this, "FrontendUrl", {
         value: `http://${frontend.loadBalancer.loadBalancerDnsName}`,
         description: "Frontend Application URL",
-        exportName: `${namespaceParam.valueAsString}-FrontendUrl`,
+        exportName: `${namespaceParam.namespace.valueAsString}-FrontendUrl`,
       });
     }
 
@@ -152,13 +152,13 @@ export class IsbContainerStack extends Stack {
     new CfnOutput(this, "ClusterName", {
       value: cluster.clusterName,
       description: "ECS Cluster Name",
-      exportName: `${namespaceParam.valueAsString}-ClusterName`,
+      exportName: `${namespaceParam.namespace.valueAsString}-ClusterName`,
     });
 
     new CfnOutput(this, "VpcId", {
       value: vpc.vpcId,
       description: "VPC ID",
-      exportName: `${namespaceParam.valueAsString}-VpcId`,
+      exportName: `${namespaceParam.namespace.valueAsString}-VpcId`,
     });
   }
 }
