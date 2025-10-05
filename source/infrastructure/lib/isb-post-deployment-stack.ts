@@ -48,16 +48,16 @@ export class IsbPostDeploymentStack extends Stack {
       allowedPattern: "^https://.*",
     });
 
-    const ssoInstanceArn = new ParameterWithLabel(this, "SsoInstanceArn", {
-      label: "SSO Instance ARN",
-      description: "The ARN of the IAM Identity Center instance",
-    });
-
-    const idcRegion = new ParameterWithLabel(this, "IdcRegion", {
-      label: "IDC Region",
-      description: "The AWS region where IAM Identity Center is deployed",
-      default: "us-east-1",
-    });
+    const awsAccessPortalUrl = new ParameterWithLabel(
+      this,
+      "AwsAccessPortalUrl",
+      {
+        label: "AWS Access Portal URL",
+        description:
+          "The URL of the AWS Access Portal (IAM Identity Center login page)",
+        allowedPattern: "^https://.*",
+      },
+    );
 
     addParameterGroup(this, {
       label: "Post-Deployment Stack Configuration",
@@ -66,8 +66,7 @@ export class IsbPostDeploymentStack extends Stack {
         orgMgtAccountId,
         idcAccountId,
         webAppUrl,
-        ssoInstanceArn,
-        idcRegion,
+        awsAccessPortalUrl,
       ],
     });
 
@@ -152,9 +151,8 @@ export class IsbPostDeploymentStack extends Stack {
       "PostDeploymentResources",
       {
         namespace: namespaceParam.namespace.valueAsString,
-        ssoInstanceArn,
-        idcRegion,
         webAppUrl,
+        awsAccessPortalUrl: awsAccessPortalUrl.valueAsString,
         appConfigApplication: sharedParamCR.getAttString(
           "configApplicationId",
         ),
@@ -162,9 +160,6 @@ export class IsbPostDeploymentStack extends Stack {
         appConfigConfigProfile: sharedParamCR.getAttString(
           "globalConfigConfigurationProfileId",
         ),
-        adminGroupId: sharedParamCR.getAttString("adminGroupId"),
-        managerGroupId: sharedParamCR.getAttString("managerGroupId"),
-        userGroupId: sharedParamCR.getAttString("userGroupId"),
       },
     );
 
@@ -172,24 +167,25 @@ export class IsbPostDeploymentStack extends Stack {
     applyIsbTag(this, namespaceParam.namespace.valueAsString);
 
     // Outputs
-    new CfnOutput(this, "ApplicationArn", {
-      description: "IAM Identity Center Application ARN",
-      value: postDeploymentResources.applicationArn,
-    });
-
-    new CfnOutput(this, "IdpSignInUrl", {
-      description: "IAM Identity Center Sign-In URL",
-      value: postDeploymentResources.idpSignInUrl,
-    });
-
-    new CfnOutput(this, "IdpSignOutUrl", {
-      description: "IAM Identity Center Sign-Out URL",
-      value: postDeploymentResources.idpSignOutUrl,
-    });
-
     new CfnOutput(this, "PostDeploymentStatus", {
       description: "Post-deployment configuration status",
-      value: "Completed - Manual verification may be required for some steps",
+      value: postDeploymentResources.status,
+    });
+
+    new CfnOutput(this, "ConfiguredWebAppUrl", {
+      description: "Web Application URL configured in AppConfig",
+      value: webAppUrl.valueAsString,
+    });
+
+    new CfnOutput(this, "ConfiguredAwsAccessPortalUrl", {
+      description: "AWS Access Portal URL configured in AppConfig",
+      value: awsAccessPortalUrl.valueAsString,
+    });
+
+    new CfnOutput(this, "NextSteps", {
+      description: "Required manual configuration steps",
+      value:
+        "See POST-DEPLOYMENT-README.md for instructions on creating the SAML application manually",
     });
   }
 }

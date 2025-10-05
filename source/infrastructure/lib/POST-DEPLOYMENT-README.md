@@ -1,201 +1,208 @@
-# Post-Deployment Stack
-
-The Post-Deployment stack automates the manual configuration steps from the Innovation Sandbox on AWS Implementation Guide that must be completed after the initial stack deployment.
+# Post-Deployment Manual Configuration Guide
 
 ## Overview
 
-This stack creates a custom resource Lambda function that:
+The Post-Deployment stack automates updating AWS AppConfig with your web application URL. However, **SAML application creation must be done manually** through the AWS IAM Identity Center console due to AWS API limitations.
 
-1. **Creates IAM Identity Center SAML 2.0 Application** - Automatically sets up the SAML application with the correct ACS URL and audience
-2. **Assigns Groups to Application** - Assigns the three IAM Identity Center groups (Admins, Managers, Users) to the SAML application
-3. **Updates AWS AppConfig** - Configures the GlobalConfig with:
-   - IdP Sign-In URL
-   - IdP Sign-Out URL
-   - IdP Audience
-   - Web Application URL
-   - AWS Access Portal URL
-4. **Stores Certificate in Secrets Manager** - Saves the IAM Identity Center SAML certificate for authentication
+## Important Limitation
+
+**AWS IAM Identity Center does not support creating SAML 2.0 applications via API.** The `CreateApplication` API only supports OAuth 2.0 applications. Therefore, the SAML application setup must be completed manually through the AWS Management Console.
+
+Source: [AWS IAM Identity Center CreateApplication API Documentation](https://docs.aws.amazon.com/singlesignon/latest/APIReference/API_CreateApplication.html)
+
+> "This API does not support creating SAML 2.0 customer managed applications or AWS managed applications. You can create a SAML 2.0 customer managed application in the AWS Management Console only."
 
 ## Prerequisites
 
-Before deploying this stack, you must:
+Before starting manual configuration:
 
-1. Deploy all other stacks in order:
-   - Account Pool Stack
-   - IDC Stack
-   - Data Stack
-   - Compute Stack (or Container Stack for GovCloud)
+1. ✅ All other stacks deployed successfully (Account Pool, IDC, Data, Compute/Container)
+2. ✅ Post-Deployment stack deployed successfully
+3. ✅ You have the following values from stack outputs:
+   - `WEB_APP_URL` - Your web application URL (CloudFront or ALB)
+   - `AWS_ACCESS_PORTAL_URL` - Your IAM Identity Center login page
+   - Your namespace value (e.g., "myisb")
 
-2. Obtain the web application URL from stack outputs:
-   - **Commercial AWS**: CloudFront URL from Compute stack outputs (`CloudFrontDistributionUrl`)
-   - **GovCloud**: ALB URL from Container stack outputs (`FrontendUrl`)
+## Manual SAML Application Setup
 
-3. Set the `WEB_APP_URL` environment variable in your `.env` file:
-   ```shell
-   WEB_APP_URL=https://your-cloudfront-url.cloudfront.net
-   # OR for GovCloud
-   WEB_APP_URL=https://your-alb-url.us-gov-west-1.elb.amazonaws.com
-   ```
+### Step 1: Navigate to IAM Identity Center Console
 
-## Deployment
+1. Sign in to the AWS Management Console
+2. Navigate to **IAM Identity Center**
+3. In the left navigation, click **Applications**
 
-Deploy the post-deployment stack after all other stacks:
+### Step 2: Create Custom SAML 2.0 Application
 
-```shell
-npm run deploy:post-deployment
+1. Click **Add application**
+2. Select **Add custom SAML 2.0 application**
+3. Click **Next**
+
+### Step 3: Configure Application Details
+
+**Display name:**
+```
+InnovationSandboxApp-{namespace}
+```
+Replace `{namespace}` with your namespace (e.g., `InnovationSandboxApp-myisb`)
+
+**Description:**
+```
+Innovation Sandbox on AWS SAML Application
 ```
 
-This will:
-- Read configuration from existing stacks via SSM parameters
-- Create the IAM Identity Center SAML application
-- Configure authentication settings in AppConfig
-- Store the SAML certificate in Secrets Manager
+**Application start URL:** (Optional)
+```
+{WEB_APP_URL}
+```
 
-## Manual Steps Still Required
+**Application ACS URL:**
+```
+{WEB_APP_URL}/api/auth/login/callback
+```
 
-After deploying this stack, you still need to manually:
+**Application SAML audience:**
+```
+Isb-{namespace}-Audience
+```
+Replace `{namespace}` with your namespace (e.g., `Isb-myisb-Audience`)
 
-### 1. Configure Attribute Mappings in IAM Identity Center
+Click **Submit**
 
-The SAML attribute mappings must be configured in the IAM Identity Center console:
+### Step 4: Configure Attribute Mappings
 
-1. Navigate to the IAM Identity Center console
-2. Go to **Applications** → **Customer managed**
-3. Select the created application (e.g., `InnovationSandboxApp-myisb`)
-4. Click **Actions** → **Edit attribute mappings**
-5. Configure the **Subject** attribute:
-   - **Maps to this string value or user attribute in IAM Identity Center**: `${user:email}`
-   - **Format**: `emailAddress`
-6. Click **Save changes**
+After creating the application, you need to configure attribute mappings:
 
-### 2. Add Users to IAM Identity Center Groups
+1. In the application details page, go to the **Attribute mappings** tab
+2. Click **Add new attribute mapping**
+3. Add the following mapping:
 
-Assign users to the appropriate groups for access control:
+| User attribute in the application | Maps to this string value or user attribute in IAM Identity Center | Format |
+|-----------------------------------|-------------------------------------------------------------------|--------|
+| `Subject` | `${user:email}` | emailAddress |
+| `email` | `${user:email}` | unspecified |
 
-1. Navigate to the IAM Identity Center console
-2. Go to **Users** or **Groups**
-3. Add users to one or more of these groups:
-   - `<NAMESPACE>_IsbUsersGroup` - Read-only access to sandbox accounts
-   - `<NAMESPACE>_IsbManagersGroup` - Can manage leases and templates
-   - `<NAMESPACE>_IsbAdminsGroup` - Full administrative access
+4. Click **Save changes**
 
-### 3. Verify SAML Configuration
+### Step 5: Assign Users and Groups
 
-Verify the SAML application is properly configured:
+1. In the application details page, go to the **Assigned users** tab
+2. Click **Assign users**
+3. Assign the three IAM Identity Center groups:
+   - `IsbAdminsGroup-{namespace}` (or your custom admin group name)
+   - `IsbManagersGroup-{namespace}` (or your custom manager group name)
+   - `IsbUsersGroup-{namespace}` (or your custom user group name)
+4. Click **Assign users**
 
-1. Check that the Application ACS URL is correct:
-   ```
-   <WEB_APP_URL>/api/auth/login/callback
-   ```
+### Step 6: Download IAM Identity Center Metadata
 
-2. Check that the Application SAML audience is correct:
-   ```
-   Isb-<NAMESPACE>-Audience
-   ```
+1. In the application details page, go to the **Configuration** tab
+2. Under **IAM Identity Center metadata**, click **Download**
+3. Save the metadata XML file
+4. Open the XML file and locate the X.509 certificate between `<X509Certificate>` tags
+5. Copy the certificate value (the long base64-encoded string)
 
-3. Test authentication by logging into the web application
+### Step 7: Update AppConfig with SAML Details
 
-## Stack Outputs
+You need to manually update the AppConfig configuration to replace placeholder values with actual SAML metadata.
 
-After deployment, the stack provides these outputs:
+#### For GovCloud:
 
-- **ApplicationArn** - ARN of the created IAM Identity Center application
-- **IdpSignInUrl** - IAM Identity Center sign-in URL
-- **IdpSignOutUrl** - IAM Identity Center sign-out URL
-- **PostDeploymentStatus** - Status message indicating completion
+**Sign-in URL format:**
+```
+https://{identity-store-id}.signin.aws-us-gov/platform/saml/{application-id}
+```
+
+**Sign-out URL format:**
+```
+https://{identity-store-id}.signin.aws-us-gov/platform/logout
+```
+
+#### For Commercial AWS:
+
+**Sign-in URL format:**
+```
+https://{identity-store-id}.awsapps.com/start
+```
+
+**Sign-out URL format:**
+```
+https://{identity-store-id}.awsapps.com/start#/signout
+```
+
+You can find these URLs in the IAM Identity Center SAML application metadata XML file.
+
+#### Update AppConfig Configuration:
+
+1. Navigate to **AWS AppConfig** in the AWS Console
+2. Find your Innovation Sandbox application
+3. Open the global configuration profile
+4. Edit the configuration and update the `auth` section:
+
+```yaml
+auth:
+  maintenanceMode: false
+  idpSignInUrl: "https://d-xxxxxxxxxx.awsapps.com/start"  # Replace with actual sign-in URL
+  idpSignOutUrl: "https://d-xxxxxxxxxx.awsapps.com/start#/signout"  # Replace with actual sign-out URL
+  idpAudience: "Isb-{namespace}-Audience"  # Should already be set correctly
+  webAppUrl: "{WEB_APP_URL}"  # Should already be set correctly
+  awsAccessPortalUrl: "{AWS_ACCESS_PORTAL_URL}"  # Should already be set correctly
+  sessionDurationInMinutes: 60
+```
+
+5. Save and deploy the configuration
+
+### Step 8: Store Certificate in Secrets Manager
+
+1. Navigate to **AWS Secrets Manager** in the AWS Console
+2. Find or create the secret: `/InnovationSandbox/{namespace}/Auth/IDPCert`
+3. Update the secret value with the X.509 certificate you copied in Step 6
+4. The certificate should be stored as plain text (the base64-encoded string without the `<X509Certificate>` tags)
+
+### Step 9: Verify Configuration
+
+1. Navigate to your web application URL
+2. You should be redirected to the IAM Identity Center login page
+3. Log in with a user assigned to one of the three groups
+4. You should be redirected back to the Innovation Sandbox application
 
 ## Troubleshooting
 
-### Application Creation Fails
+### Application doesn't appear in IAM Identity Center
 
-If the SAML application creation fails:
-- Ensure the SSO Instance ARN is correct in your `.env` file
-- Verify you have permissions to create applications in IAM Identity Center
-- Check that no application with the same name already exists
+- Verify you selected "Add custom SAML 2.0 application" (not OAuth)
+- Check that the application name matches the expected format
 
-### AppConfig Update Fails
+### Login redirect fails
 
-If AppConfig update fails:
-- Verify the Data stack deployed successfully
-- Check that AppConfig resources exist in the Data stack
-- Ensure Lambda has permissions to update AppConfig
+- Verify the Application ACS URL matches exactly: `{WEB_APP_URL}/api/auth/login/callback`
+- Check that attribute mappings are configured correctly
+- Ensure users are assigned to the application groups
 
-### Secrets Manager Update Fails
+### Certificate errors
 
-If certificate storage fails:
-- Verify Lambda has permissions to create/update secrets
-- Check that the secret name doesn't conflict with existing secrets
-- Review CloudWatch logs for the Lambda function
+- Verify the certificate in Secrets Manager doesn't include the XML tags
+- Ensure the certificate is base64-encoded (no line breaks or formatting)
 
-## Cleanup
+### Configuration not updating
 
-To remove the post-deployment stack:
+- Check AppConfig deployment status
+- Verify the configuration profile is deployed
+- May take a few minutes for changes to propagate
 
-```shell
-npm run destroy:post-deployment
-```
+## GovCloud-Specific Considerations
 
-This will:
-- Delete the IAM Identity Center SAML application
-- Retain the AppConfig configuration (will need manual cleanup if desired)
-- Retain the Secrets Manager secret (will need manual cleanup if desired)
+For AWS GovCloud deployments:
 
-## Architecture
+1. **Application ACS URL and Audience** differ from commercial AWS:
+   - ACS URL: `https://signin.amazonaws-us-gov.com/saml`
+   - Audience: `urn:amazon:webservices:govcloud`
 
-```
-┌─────────────────────────────────────────────────┐
-│         Post-Deployment Stack                    │
-│                                                  │
-│  ┌────────────────────────────────────────┐    │
-│  │  Custom Resource Lambda                 │    │
-│  │                                         │    │
-│  │  ┌──────────────────────────────────┐  │    │
-│  │  │  IAM Identity Center             │  │    │
-│  │  │  - Create SAML App               │  │    │
-│  │  │  - Assign Groups                 │  │    │
-│  │  │  - Get Metadata                  │  │    │
-│  │  └──────────────────────────────────┘  │    │
-│  │                                         │    │
-│  │  ┌──────────────────────────────────┐  │    │
-│  │  │  AWS AppConfig                   │  │    │
-│  │  │  - Update GlobalConfig           │  │    │
-│  │  │  - Set Auth URLs                 │  │    │
-│  │  └──────────────────────────────────┘  │    │
-│  │                                         │    │
-│  │  ┌──────────────────────────────────┐  │    │
-│  │  │  AWS Secrets Manager             │  │    │
-│  │  │  - Store IDC Certificate         │  │    │
-│  │  └──────────────────────────────────┘  │    │
-│  └────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────┘
-```
+2. **Sign-in/Sign-out URLs** use the `aws-us-gov` domain:
+   - Sign-in: `https://{identity-store-id}.signin.aws-us-gov/platform/saml/{application-id}`
+   - Sign-out: `https://{identity-store-id}.signin.aws-us-gov/platform/logout`
 
-## IAM Permissions Required
+## Additional Resources
 
-The custom resource Lambda function requires these permissions:
-
-- **IAM Identity Center**:
-  - `sso:CreateApplication`
-  - `sso:DeleteApplication`
-  - `sso:DescribeApplication`
-  - `sso:UpdateApplication`
-  - `sso:PutApplicationAssignmentConfiguration`
-  - `sso:CreateApplicationAssignment`
-
-- **AWS AppConfig**:
-  - `appconfig:GetLatestConfiguration`
-  - `appconfig:StartConfigurationSession`
-  - `appconfig:CreateHostedConfigurationVersion`
-
-- **AWS Secrets Manager**:
-  - `secretsmanager:CreateSecret`
-  - `secretsmanager:UpdateSecret`
-  - `secretsmanager:DescribeSecret`
-  - `secretsmanager:PutSecretValue`
-
-## Notes
-
-- This stack must be deployed to the same account as the Data and Compute stacks (Hub account)
-- The stack uses SSM parameters to retrieve configuration from other stacks
-- SAML application creation may take a few minutes to complete
-- The Lambda function has a 5-minute timeout to accommodate API rate limits
+- [AWS IAM Identity Center User Guide - Setting up customer managed SAML 2.0 applications](https://docs.aws.amazon.com/singlesignon/latest/userguide/customermanagedapps-saml2-setup.html)
+- [Enabling SAML 2.0 federation with AWS IAM Identity Center and AWS GovCloud](https://aws.amazon.com/blogs/publicsector/enabling-saml-2-0-federation-iam-identity-center-aws-govcloud-us/)
+- [AWS IAM Identity Center API Reference - CreateApplication](https://docs.aws.amazon.com/singlesignon/latest/APIReference/API_CreateApplication.html)
