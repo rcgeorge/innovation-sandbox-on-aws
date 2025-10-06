@@ -44,7 +44,10 @@ async function lambdaHandler(
     ValidatedEnvironment<AuthorizerLambdaEnvironment>,
 ): Promise<AuthResponse> {
   try {
-    const parts = event.headers?.Authorization?.split(" ");
+    // HTTP headers are case-insensitive, but JS objects are case-sensitive
+    // Check both Authorization and authorization
+    const authHeader = event.headers?.Authorization || event.headers?.authorization;
+    const parts = authHeader?.split(" ");
     if (!parts) {
       logger.info("Authorization header not provided");
       return generatePolicy("user", "Deny", event.methodArn);

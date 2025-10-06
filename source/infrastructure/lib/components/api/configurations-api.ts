@@ -11,6 +11,7 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import { addCorsOptions } from "@amzn/innovation-sandbox-infrastructure/helpers/add-cors-options";
 import { grantIsbAppConfigRead } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
@@ -70,5 +71,6 @@ export class ConfigurationsApi {
     });
     configurationsResource.addMethod("GET");
     configurationsResource.addMethod("POST");
+    addCorsOptions(configurationsResource);
   }
 }

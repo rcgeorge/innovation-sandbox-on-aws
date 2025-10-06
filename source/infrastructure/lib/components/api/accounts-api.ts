@@ -13,6 +13,7 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import { addCorsOptions } from "@amzn/innovation-sandbox-infrastructure/helpers/add-cors-options";
 import {
   getIdcRoleArn,
   getOrgMgtRoleArn,
@@ -119,19 +120,24 @@ export class AccountsApi {
     });
     accountsResource.addMethod("GET");
     accountsResource.addMethod("POST");
+    addCorsOptions(accountsResource);
 
     const accountIdResource = accountsResource.addResource("{awsAccountId}");
     accountIdResource.addMethod("GET");
+    addCorsOptions(accountIdResource);
 
     const accountRetryCleanupResource =
       accountIdResource.addResource("retryCleanup");
     accountRetryCleanupResource.addMethod("POST");
+    addCorsOptions(accountRetryCleanupResource);
 
     const accountEjectResource = accountIdResource.addResource("eject");
     accountEjectResource.addMethod("POST");
+    addCorsOptions(accountEjectResource);
 
     const accountsUnregisteredResource =
       accountsResource.addResource("unregistered");
     accountsUnregisteredResource.addMethod("GET");
+    addCorsOptions(accountsUnregisteredResource);
   }
 }

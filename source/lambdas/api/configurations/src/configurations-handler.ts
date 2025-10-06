@@ -15,6 +15,7 @@ import apiMiddlewareBundle, {
   IsbApiContext,
   IsbApiEvent,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
+import { corsMiddleware } from "@amzn/innovation-sandbox-commons/lambda/middleware/cors-middleware.js";
 import {
   ContextWithConfig,
   isbConfigMiddleware,
@@ -44,6 +45,7 @@ export const handler = apiMiddlewareBundle({
   environmentSchema: ConfigurationLambdaEnvironmentSchema,
 })
   .use(isbConfigMiddleware())
+  .use(corsMiddleware())
   .handler(httpRouterHandler(routes));
 
 async function getAllConfigurationsHandler(

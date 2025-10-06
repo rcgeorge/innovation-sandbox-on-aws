@@ -13,6 +13,7 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import { addCorsOptions } from "@amzn/innovation-sandbox-infrastructure/helpers/add-cors-options";
 import {
   getIdcRoleArn,
   getOrgMgtRoleArn,
@@ -122,18 +123,23 @@ export class LeasesApi {
     });
     leasesResource.addMethod("GET");
     leasesResource.addMethod("POST");
+    addCorsOptions(leasesResource);
 
     const leaseIdResource = leasesResource.addResource("{leaseId}");
     leaseIdResource.addMethod("GET");
     leaseIdResource.addMethod("PATCH");
+    addCorsOptions(leaseIdResource);
 
     const leaseReviewResource = leaseIdResource.addResource("review");
     leaseReviewResource.addMethod("POST");
+    addCorsOptions(leaseReviewResource);
 
     const leaseFreezeResource = leaseIdResource.addResource("freeze");
     leaseFreezeResource.addMethod("POST");
+    addCorsOptions(leaseFreezeResource);
 
     const leaseTerminateResource = leaseIdResource.addResource("terminate");
     leaseTerminateResource.addMethod("POST");
+    addCorsOptions(leaseTerminateResource);
   }
 }

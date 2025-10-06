@@ -11,6 +11,7 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import { addCorsOptions } from "@amzn/innovation-sandbox-infrastructure/helpers/add-cors-options";
 import {
   AppConfigReadPolicyStatement,
   grantIsbDbReadWrite,
@@ -93,6 +94,7 @@ export class LeaseTemplatesApi {
     });
     leaseTemplatesResource.addMethod("GET");
     leaseTemplatesResource.addMethod("POST");
+    addCorsOptions(leaseTemplatesResource);
 
     const leaseTemplateNameResource = leaseTemplatesResource.addResource(
       "{leaseTemplateName}",
@@ -100,5 +102,6 @@ export class LeaseTemplatesApi {
     leaseTemplateNameResource.addMethod("GET");
     leaseTemplateNameResource.addMethod("PUT");
     leaseTemplateNameResource.addMethod("DELETE");
+    addCorsOptions(leaseTemplateNameResource);
   }
 }

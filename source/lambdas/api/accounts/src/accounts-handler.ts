@@ -24,6 +24,7 @@ import apiMiddlewareBundle, {
   IsbApiContext,
   IsbApiEvent,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
+import { corsMiddleware } from "@amzn/innovation-sandbox-commons/lambda/middleware/cors-middleware.js";
 import {
   createHttpJSendError,
   createHttpJSendValidationError,
@@ -86,6 +87,7 @@ export const handler = apiMiddlewareBundle({
   environmentSchema: AccountLambdaEnvironmentSchema,
 })
   .use(isbConfigMiddleware())
+  .use(corsMiddleware())
   .handler(httpRouterHandler(routes));
 
 type AccountsApiContext = ContextWithConfig &

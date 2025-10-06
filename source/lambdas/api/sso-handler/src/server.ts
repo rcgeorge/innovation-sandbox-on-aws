@@ -9,7 +9,6 @@ import {
 } from "@node-saml/passport-saml";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
-import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import passport from "passport";
@@ -31,11 +30,7 @@ app.disable("x-powered-by");
 
 app.use(cookieParser());
 
-app.use(
-  cors({
-    credentials: true,
-  }),
-);
+// CORS configuration will be set dynamically per request
 app.use(bodyParser.urlencoded({ extended: true }));
 
 const initServer = (config: SSOConfig) => {
@@ -158,6 +153,13 @@ app.get(
     );
     initServer(config);
     logger.debug(`GET * for ${req.url}`);
+
+    // Set CORS headers for frontend origin
+    res.header("Access-Control-Allow-Origin", config.webAppUrl);
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+
     const path = req.path.replace(/\/$/, "");
 
     switch (path) {
@@ -225,6 +227,13 @@ app.post(
     );
     initServer(config);
     logger.debug(`POST * for ${req.url}`);
+
+    // Set CORS headers for frontend origin
+    res.header("Access-Control-Allow-Origin", config.webAppUrl);
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+
     const path = req.path.replace(/\/$/, "");
 
     if (path === config.loginCallbackPath) {
@@ -235,5 +244,23 @@ app.post(
         message: "Missing Authentication Token",
       });
     }
+  },
+);
+
+// Handle OPTIONS preflight requests
+app.options(
+  "*",
+  async (req: APIGatewayRequest, res: Response) => {
+    const config: SSOConfig = await getSSOConfig(
+      req.apiGateway?.context as any,
+    );
+    logger.debug(`OPTIONS * for ${req.url}`);
+
+    // Set CORS headers for frontend origin
+    res.header("Access-Control-Allow-Origin", config.webAppUrl);
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.status(200).send();
   },
 );

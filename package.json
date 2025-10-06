@@ -19,7 +19,7 @@
     "docker:login": "npm run with-env -- \"aws ecr get-login-password --region $PRIVATE_ECR_REPO_REGION | docker login --username AWS --password-stdin $HUB_ACCOUNT_ID.dkr.ecr.$PRIVATE_ECR_REPO_REGION.amazonaws.com\"",
     "docker:push": "npm run with-env -- docker push $HUB_ACCOUNT_ID.dkr.ecr.$PRIVATE_ECR_REPO_REGION.amazonaws.com/$PRIVATE_ECR_REPO:latest",
     "docker:build-and-push": "npm run docker:build && npm run docker:login && npm run docker:push",
-    "docker:frontend:build": "npm run --workspace @amzn/innovation-sandbox-frontend build && npm run with-env -- docker build --platform linux/amd64 -t $HUB_ACCOUNT_ID.dkr.ecr.$PRIVATE_ECR_REPO_REGION.amazonaws.com/$PRIVATE_ECR_FRONTEND_REPO:latest ./source/frontend",
+    "docker:frontend:build": "npm run with-env -- npm run --workspace @amzn/innovation-sandbox-frontend build && npm run with-env -- docker build --platform linux/amd64 -t $HUB_ACCOUNT_ID.dkr.ecr.$PRIVATE_ECR_REPO_REGION.amazonaws.com/$PRIVATE_ECR_FRONTEND_REPO:latest ./source/frontend",
     "docker:frontend:push": "npm run with-env -- docker push $HUB_ACCOUNT_ID.dkr.ecr.$PRIVATE_ECR_REPO_REGION.amazonaws.com/$PRIVATE_ECR_FRONTEND_REPO:latest",
     "docker:frontend:build-and-push": "npm run docker:frontend:build && npm run docker:login && npm run docker:frontend:push",
     "deploy:all": "npm run deploy:account-pool && npm run deploy:idc && npm run deploy:data && npm run deploy:compute",
