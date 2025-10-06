@@ -143,10 +143,10 @@
       "Condition": {
         "ArnNotLike": {
           "aws:PrincipalARN": [
-            "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
-            "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
-            "arn:aws:iam::*:role/stacksets-exec-*",
-            "arn:aws:iam::*:role/AWSControlTowerExecution"
+            "arn:*:iam::*:role/InnovationSandbox-${namespace}*",
+            "arn:*:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
+            "arn:*:iam::*:role/stacksets-exec-*",
+            "arn:*:iam::*:role/AWSControlTowerExecution"
           ]
         }
       }

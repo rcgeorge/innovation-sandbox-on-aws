@@ -27,7 +27,7 @@ phases:
       - aws configure set aws_session_token $(echo $INTERMEDIATE_ROLE_CREDS | jq -r .Credentials.SessionToken) --profile intermediate-role
 
       - echo ------------------------ Assuming IAM role $CLEANUP_ROLE_NAME in sandbox account ------------------------
-      - export SANDBOX_ACCOUNT_ROLE_CREDS=$(aws sts assume-role --profile intermediate-role --role-arn arn:aws:iam::$CLEANUP_ACCOUNT_ID:role/$CLEANUP_ROLE_NAME --role-session-name AccountCleanup)
+      - export SANDBOX_ACCOUNT_ROLE_CREDS=$(aws sts assume-role --profile intermediate-role --role-arn arn:${AWS_PARTITION}:iam::$CLEANUP_ACCOUNT_ID:role/$CLEANUP_ROLE_NAME --role-session-name AccountCleanup)
       - aws configure set aws_access_key_id $(echo $SANDBOX_ACCOUNT_ROLE_CREDS | jq -r .Credentials.AccessKeyId) --profile cleanup
       - aws configure set aws_secret_access_key $(echo $SANDBOX_ACCOUNT_ROLE_CREDS | jq -r .Credentials.SecretAccessKey) --profile cleanup
       - aws configure set aws_session_token $(echo $SANDBOX_ACCOUNT_ROLE_CREDS | jq -r .Credentials.SessionToken) --profile cleanup

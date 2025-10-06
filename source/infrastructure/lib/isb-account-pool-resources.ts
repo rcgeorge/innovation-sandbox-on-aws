@@ -183,7 +183,7 @@ export class IsbAccountPoolResources {
         availableOu.attrId,
         cleanUpOu.attrId,
         quarantineOu.attrId,
-        entryOu.attrId,
+        // Note: Entry OU is intentionally excluded to allow StackSets to create SandboxAccountRole
         exitOu.attrId,
       ],
     });

@@ -6,19 +6,21 @@
       "Effect": "Deny",
       "Action": ["*"],
       "Resource": [
-        "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
-        "arn:aws:iam::*:role/AWSReservedSSO*",
-        "arn:aws:*:*:*:*Isb-${namespace}*",
-        "arn:aws:iam::*:role/stacksets-exec-*",
-        "arn:aws:iam::*:saml-provider/*AWSSSO*"
+        "arn:*:iam::*:role/InnovationSandbox-${namespace}-IntermediateRole",
+        "arn:*:iam::*:role/InnovationSandbox-${namespace}-OrgMgtRole",
+        "arn:*:iam::*:role/InnovationSandbox-${namespace}-IdcRole",
+        "arn:*:iam::*:role/AWSReservedSSO*",
+        "arn:*:*:*:*:*Isb-${namespace}*",
+        "arn:*:iam::*:role/stacksets-exec-*",
+        "arn:*:iam::*:saml-provider/*AWSSSO*"
       ],
       "Condition": {
         "ArnNotLike": {
           "aws:PrincipalARN": [
-            "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
-            "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
-            "arn:aws:iam::*:role/stacksets-exec-*",
-            "arn:aws:iam::*:role/AWSControlTowerExecution"
+            "arn:*:iam::*:role/InnovationSandbox-${namespace}*",
+            "arn:*:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
+            "arn:*:iam::*:role/stacksets-exec-*",
+            "arn:*:iam::*:role/AWSControlTowerExecution"
           ]
         }
       }
@@ -27,21 +29,21 @@
       "Condition": {
         "ArnNotLike": {
           "aws:PrincipalARN": [
-            "arn:aws:iam::*:role/AWSControlTowerExecution",
-            "arn:aws:iam::*:role/stacksets-exec-*"
+            "arn:*:iam::*:role/AWSControlTowerExecution",
+            "arn:*:iam::*:role/stacksets-exec-*"
           ]
         }
       },
       "Action": ["*"],
       "Resource": [
-        "arn:aws:cloudtrail:*:*:trail/aws-controltower-*",
-        "arn:aws:events:*:*:rule/aws-controltower-*",
-        "arn:aws:events:*:*:rule/*AWSControlTower*",
-        "arn:aws:lambda:*:*:function:aws-controltower-*",
-        "arn:aws:logs:*:*:log-group:*aws-controltower*",
-        "arn:aws:sns:*:*:aws-controltower-*",
-        "arn:aws:iam::*:role/aws-controltower-*",
-        "arn:aws:iam::*:role/*AWSControlTower*"
+        "arn:*:cloudtrail:*:*:trail/aws-controltower-*",
+        "arn:*:events:*:*:rule/aws-controltower-*",
+        "arn:*:events:*:*:rule/*AWSControlTower*",
+        "arn:*:lambda:*:*:function:aws-controltower-*",
+        "arn:*:logs:*:*:log-group:*aws-controltower*",
+        "arn:*:sns:*:*:aws-controltower-*",
+        "arn:*:iam::*:role/aws-controltower-*",
+        "arn:*:iam::*:role/*AWSControlTower*"
       ],
       "Effect": "Deny",
       "Sid": "ProtectControlTowerResources"
@@ -49,7 +51,7 @@
     {
       "Condition": {
         "ArnNotLike": {
-          "aws:PrincipalARN": "arn:aws:iam::*:role/AWSControlTowerExecution"
+          "aws:PrincipalARN": "arn:*:iam::*:role/AWSControlTowerExecution"
         }
       },
       "Action": [
@@ -71,7 +73,7 @@
           "aws:ResourceTag/aws-control-tower": "managed-by-control-tower"
         },
         "ArnNotLike": {
-          "aws:PrincipalARN": "arn:aws:iam::*:role/AWSControlTowerExecution"
+          "aws:PrincipalARN": "arn:*:iam::*:role/AWSControlTowerExecution"
         }
       },
       "Action": ["config:*"],
@@ -85,7 +87,7 @@
           "aws:TagKeys": "aws-control-tower"
         },
         "ArnNotLike": {
-          "aws:PrincipalARN": "arn:aws:iam::*:role/AWSControlTowerExecution"
+          "aws:PrincipalARN": "arn:*:iam::*:role/AWSControlTowerExecution"
         }
       },
       "Action": ["config:TagResource", "config:UntagResource"],
