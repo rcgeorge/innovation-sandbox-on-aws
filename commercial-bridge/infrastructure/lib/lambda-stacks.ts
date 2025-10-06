@@ -47,6 +47,17 @@ export class CostInfoLambdaStack extends cdk.Stack {
       })
     );
 
+    // Grant Organizations permissions for GovCloud account mapping lookup
+    this.lambdaFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'organizations:ListCreateAccountStatus',
+        ],
+        resources: ['*'],
+      })
+    );
+
     // CloudFormation outputs
     new cdk.CfnOutput(this, 'CostInfoLambdaArn', {
       value: this.lambdaFunction.functionArn,

@@ -73,7 +73,7 @@ export class ApiGatewayStack extends cdk.Stack {
     // Create /cost-info resource
     const costInfoResource = this.api.root.addResource('cost-info');
     costInfoResource.addMethod(
-      'GET',
+      'POST',
       new apigateway.LambdaIntegration(props.costInfoLambda, {
         proxy: true,
       }),

@@ -6,9 +6,22 @@ import {
   GetCostAndUsageCommand,
   GetCostAndUsageCommandInput,
 } from "@aws-sdk/client-cost-explorer";
+import {
+  OrganizationsClient,
+  ListCreateAccountStatusCommand,
+  CreateAccountState,
+  CreateAccountStatus,
+} from "@aws-sdk/client-organizations";
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 
 const costExplorer = new CostExplorerClient({});
+const organizations = new OrganizationsClient({});
+
+// Cache for GovCloud -> Commercial account mapping
+// Persists across warm Lambda invocations
+let mappingCache: Map<string, string> | null = null;
+let cacheTimestamp: number = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 interface CostQueryParams {
   linkedAccountId: string;
@@ -16,6 +29,8 @@ interface CostQueryParams {
   endDate: string;
   granularity?: "DAILY" | "MONTHLY";
   region?: string; // Optional: filter by specific region (e.g., us-gov-east-1)
+  isGovCloudAccountId?: boolean; // NEW: Indicates linkedAccountId is a GovCloud account ID
+  commercialAccountId?: string; // NEW: Explicit commercial account ID (bypasses auto-discovery)
 }
 
 interface CostBreakdown {
@@ -25,6 +40,8 @@ interface CostBreakdown {
 
 interface CostResponse {
   linkedAccountId: string;
+  govCloudAccountId?: string; // NEW: Included if request was for GovCloud account
+  commercialAccountId?: string; // NEW: Included if request was for GovCloud account
   startDate: string;
   endDate: string;
   totalCost: number;
@@ -39,30 +56,98 @@ function validateDate(dateString: string): boolean {
   return date instanceof Date && !isNaN(date.getTime());
 }
 
-function parseQueryParams(event: APIGatewayProxyEvent): CostQueryParams | { error: string } {
-  const linkedAccountId = event.queryStringParameters?.linkedAccountId;
-  const startDate = event.queryStringParameters?.startDate;
-  const endDate = event.queryStringParameters?.endDate;
-  const granularity = (event.queryStringParameters?.granularity || "DAILY") as "DAILY" | "MONTHLY";
-  const region = event.queryStringParameters?.region; // Optional region filter
-
-  if (!linkedAccountId) {
-    return { error: "linkedAccountId is required" };
+function parseRequestBody(event: APIGatewayProxyEvent): CostQueryParams | { error: string } {
+  if (!event.body) {
+    return { error: "Request body is required" };
   }
 
-  if (!startDate || !validateDate(startDate)) {
-    return { error: "startDate is required and must be in YYYY-MM-DD format" };
+  try {
+    const body = JSON.parse(event.body);
+
+    const linkedAccountId = body.linkedAccountId;
+    const startDate = body.startDate;
+    const endDate = body.endDate;
+    const granularity = (body.granularity || "DAILY") as "DAILY" | "MONTHLY";
+    const region = body.region; // Optional region filter
+    const isGovCloudAccountId = body.isGovCloudAccountId === true;
+    const commercialAccountId = body.commercialAccountId; // Optional explicit commercial account ID
+
+    if (!linkedAccountId) {
+      return { error: "linkedAccountId is required" };
+    }
+
+    if (!startDate || !validateDate(startDate)) {
+      return { error: "startDate is required and must be in YYYY-MM-DD format" };
+    }
+
+    if (!endDate || !validateDate(endDate)) {
+      return { error: "endDate is required and must be in YYYY-MM-DD format" };
+    }
+
+    if (new Date(startDate) > new Date(endDate)) {
+      return { error: "startDate must be before endDate" };
+    }
+
+    return { linkedAccountId, startDate, endDate, granularity, region, isGovCloudAccountId, commercialAccountId };
+  } catch (error) {
+    return { error: "Invalid JSON in request body" };
+  }
+}
+
+async function buildAccountMappingCache(): Promise<Map<string, string>> {
+  console.log("Building GovCloud -> Commercial account mapping cache...");
+  const cache = new Map<string, string>();
+  let nextToken: string | undefined;
+
+  do {
+    const command = new ListCreateAccountStatusCommand({
+      States: [CreateAccountState.SUCCEEDED],
+      MaxResults: 20,
+      NextToken: nextToken,
+    });
+    const response = await organizations.send(command);
+
+    const statuses = response.CreateAccountStatuses || [];
+    for (const status of statuses) {
+      // Only cache GovCloud account creations (those with GovCloudAccountId)
+      if (status.GovCloudAccountId && status.AccountId) {
+        cache.set(status.GovCloudAccountId, status.AccountId);
+      }
+    }
+
+    nextToken = response.NextToken;
+  } while (nextToken);
+
+  console.log(`Built mapping cache with ${cache.size} GovCloud accounts`);
+  return cache;
+}
+
+async function findCommercialAccountForGovCloud(govCloudAccountId: string): Promise<{
+  commercialAccountId: string;
+  govCloudAccountId: string;
+} | null> {
+  // Check cache first
+  if (mappingCache && (Date.now() - cacheTimestamp) < CACHE_TTL_MS) {
+    const commercialId = mappingCache.get(govCloudAccountId);
+    if (commercialId) {
+      console.log(`Cache hit: GovCloud ${govCloudAccountId} -> Commercial ${commercialId}`);
+      return { commercialAccountId: commercialId, govCloudAccountId };
+    }
   }
 
-  if (!endDate || !validateDate(endDate)) {
-    return { error: "endDate is required and must be in YYYY-MM-DD format" };
+  // Cache miss or expired - rebuild cache
+  console.log("Cache miss or expired, rebuilding...");
+  mappingCache = await buildAccountMappingCache();
+  cacheTimestamp = Date.now();
+
+  const commercialId = mappingCache.get(govCloudAccountId);
+  if (commercialId) {
+    console.log(`Found mapping: GovCloud ${govCloudAccountId} -> Commercial ${commercialId}`);
+    return { commercialAccountId: commercialId, govCloudAccountId };
   }
 
-  if (new Date(startDate) > new Date(endDate)) {
-    return { error: "startDate must be before endDate" };
-  }
-
-  return { linkedAccountId, startDate, endDate, granularity, region };
+  console.log(`No mapping found for GovCloud account ${govCloudAccountId}`);
+  return null;
 }
 
 export const handler = async (
@@ -71,8 +156,8 @@ export const handler = async (
   console.log("Event:", JSON.stringify(event, null, 2));
 
   try {
-    // Parse and validate query parameters
-    const params = parseQueryParams(event);
+    // Parse and validate request body
+    const params = parseRequestBody(event);
     if ("error" in params) {
       return {
         statusCode: 400,
@@ -84,14 +169,50 @@ export const handler = async (
       };
     }
 
-    const { linkedAccountId, startDate, endDate, granularity, region } = params;
+    const { linkedAccountId, startDate, endDate, granularity, region, isGovCloudAccountId, commercialAccountId: explicitCommercialId } = params;
+
+    // NEW: Handle GovCloud account mapping
+    let commercialAccountId = linkedAccountId;
+    let govCloudAccountId: string | undefined = undefined;
+
+    if (isGovCloudAccountId) {
+      govCloudAccountId = linkedAccountId;
+
+      // If explicit commercial account ID provided, use it (manual mapping)
+      if (explicitCommercialId) {
+        console.log(`Using explicit commercial account ${explicitCommercialId} for GovCloud account ${linkedAccountId}`);
+        commercialAccountId = explicitCommercialId;
+      } else {
+        // Otherwise, try to auto-discover via ListCreateAccountStatus
+        console.log(`Auto-discovering commercial account for GovCloud account ${linkedAccountId}`);
+        const mapping = await findCommercialAccountForGovCloud(linkedAccountId);
+
+        if (!mapping) {
+          return {
+            statusCode: 404,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+            body: JSON.stringify({
+              error: "No commercial account mapping found",
+              message: `Could not find a commercial account linked to GovCloud account ${linkedAccountId}. This account may have been created outside of the CreateGovCloudAccount API. Please provide 'commercialAccountId' in the request body.`,
+              govCloudAccountId: linkedAccountId,
+            }),
+          };
+        }
+
+        commercialAccountId = mapping.commercialAccountId;
+        console.log(`Auto-discovered commercial account ${commercialAccountId}`);
+      }
+    }
 
     // Build Cost Explorer query with optional region filter
     const filters: any[] = [
       {
         Dimensions: {
           Key: "LINKED_ACCOUNT",
-          Values: [linkedAccountId],
+          Values: [commercialAccountId], // Use commercial account ID for Cost Explorer
         },
       },
     ];
@@ -159,7 +280,9 @@ export const handler = async (
       .sort((a, b) => b.cost - a.cost); // Sort by cost descending
 
     const responseBody: CostResponse = {
-      linkedAccountId,
+      linkedAccountId: commercialAccountId, // The account ID used for Cost Explorer query
+      govCloudAccountId: govCloudAccountId, // Include if this was a GovCloud lookup
+      commercialAccountId: isGovCloudAccountId ? commercialAccountId : undefined, // Include if this was a GovCloud lookup
       startDate,
       endDate,
       totalCost: Math.round(totalCost * 100) / 100,
