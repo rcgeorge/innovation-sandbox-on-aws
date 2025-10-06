@@ -182,13 +182,17 @@ export const handler = async (
 
       console.log(`Account creation initiated: ${createRequestId}`);
 
-      // Poll for completion (with timeout)
-      // Lambda has a 15-minute timeout, but account creation can take 30+ minutes
-      // So we'll poll for a limited time and return IN_PROGRESS if not complete
-      const result = await pollAccountStatus(createRequestId, 12, 5000); // 12 attempts * 5s = 60s max
+      // Return immediately with requestId - user can poll /govcloud-accounts/{requestId} for status
+      // Account creation typically takes 5-30 minutes, too long for API Gateway 29s timeout
+      const result: CreateAccountResponse = {
+        requestId: createRequestId,
+        status: "IN_PROGRESS",
+        createTime: new Date().toISOString(),
+        message: "Account creation initiated. Check status using GET /govcloud-accounts/{requestId}",
+      };
 
       return {
-        statusCode: result.status === "SUCCEEDED" ? 200 : 202,
+        statusCode: 202,
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
