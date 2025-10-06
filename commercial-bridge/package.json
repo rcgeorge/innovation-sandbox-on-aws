@@ -1,0 +1,21 @@
+{
+  "name": "commercial-bridge",
+  "version": "1.0.0",
+  "description": "Commercial account API bridge for GovCloud Innovation Sandbox",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "deploy": "npm run build && npm run cdk:deploy",
+    "cdk:deploy": "cd infrastructure && cdk deploy --all --require-approval never",
+    "cdk:destroy": "cd infrastructure && cdk destroy --all",
+    "cdk:synth": "cd infrastructure && cdk synth"
+  },
+  "workspaces": [
+    "infrastructure",
+    "lambdas/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.2"
+  }
+}
