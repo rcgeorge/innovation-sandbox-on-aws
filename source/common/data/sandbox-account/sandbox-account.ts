@@ -36,6 +36,7 @@ export const SandboxAccountSchema = z
       .optional(),
     status: SandboxAccountStatusSchema,
     driftAtLastScan: z.boolean().optional(),
+    commercialLinkedAccountId: AwsAccountIdSchema.optional(), // NEW: For GovCloud cost tracking
   })
   .merge(ItemWithMetadataSchema)
   .strict();

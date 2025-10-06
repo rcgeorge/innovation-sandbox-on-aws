@@ -21,7 +21,8 @@ vi.mock("@amzn/innovation-sandbox-commons/utils/cross-account-roles.js", () => {
 
 const costExplorerService = IsbServices.costExplorer({
   USER_AGENT_EXTRA: "test-agent",
-});
+  AWS_REGIONS: "us-east-1", // Commercial region to use Cost Explorer
+}) as CostExplorerService; // Cast to concrete type for testing private methods
 beforeEach(() => {
   vi.restoreAllMocks();
 });

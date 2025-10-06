@@ -23,6 +23,9 @@ export type IsbEventBackplaneProps = {
   readonly orgMgtAccountId: string;
   readonly idcAccountId: string;
   readonly isGovCloud?: boolean;
+  readonly isbManagedRegions: string[];
+  readonly commercialBridgeApiUrl?: string;
+  readonly commercialBridgeApiKeySecretArn?: string;
 };
 
 /**
@@ -101,6 +104,9 @@ export class IsbInternalCore {
         isbEventBus: this.eventBus,
         namespace: props.namespace,
         orgMgtAccountId: props.orgMgtAccountId,
+        isbManagedRegions: props.isbManagedRegions,
+        commercialBridgeApiUrl: props.commercialBridgeApiUrl,
+        commercialBridgeApiKeySecretArn: props.commercialBridgeApiKeySecretArn,
       },
     );
 

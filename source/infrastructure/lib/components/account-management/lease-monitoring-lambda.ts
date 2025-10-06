@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import { EventBus } from "aws-cdk-lib/aws-events";
-import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import { PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { CfnSchedule } from "aws-cdk-lib/aws-scheduler";
 import { Construct } from "constructs";
 import path from "path";
@@ -20,6 +20,9 @@ export interface LeaseMonitoringLambdaProps {
   isbEventBus: EventBus;
   readonly namespace: string;
   orgMgtAccountId: string;
+  isbManagedRegions: string[];
+  commercialBridgeApiUrl?: string;
+  commercialBridgeApiKeySecretArn?: string;
 }
 
 export class LeaseMonitoringLambda extends Construct {
@@ -46,6 +49,7 @@ export class LeaseMonitoringLambda extends Construct {
       environment: {
         ISB_EVENT_BUS: props.isbEventBus.eventBusName,
         LEASE_TABLE_NAME: IsbComputeStack.sharedSpokeConfig.data.leaseTable,
+        ACCOUNT_TABLE_NAME: IsbComputeStack.sharedSpokeConfig.data.accountTable,
         ISB_NAMESPACE: props.namespace,
         INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
         ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
@@ -53,6 +57,9 @@ export class LeaseMonitoringLambda extends Construct {
           props.namespace,
           props.orgMgtAccountId,
         ),
+        AWS_REGIONS: props.isbManagedRegions.join(","),
+        COMMERCIAL_BRIDGE_API_URL: props.commercialBridgeApiUrl,
+        COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN: props.commercialBridgeApiKeySecretArn,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: LeaseMonitoringEnvironmentSchema,
@@ -73,7 +80,18 @@ export class LeaseMonitoringLambda extends Construct {
       scope,
       lambda,
       IsbComputeStack.sharedSpokeConfig.data.leaseTable,
+      IsbComputeStack.sharedSpokeConfig.data.accountTable,
     );
+
+    // Grant Secrets Manager permission for commercial bridge API key (GovCloud only)
+    if (props.commercialBridgeApiKeySecretArn) {
+      lambda.lambdaFunction.addToRolePolicy(
+        new PolicyStatement({
+          actions: ["secretsmanager:GetSecretValue"],
+          resources: [props.commercialBridgeApiKeySecretArn],
+        }),
+      );
+    }
 
     new CfnSchedule(scope, "LeaseMonitoringScheduledEvent", {
       description: "triggers LeaseMonitoring every hour",

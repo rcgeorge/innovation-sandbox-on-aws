@@ -102,6 +102,13 @@ export class IsbComputeStack extends Stack {
     // Get isGovCloud from CDK context (set via --context isGovCloud=true/false)
     const isGovCloud = this.node.tryGetContext("isGovCloud") === "true";
 
+    // Get ISB managed regions from CDK context
+    const isbManagedRegions = (this.node.tryGetContext("isbManagedRegions") as string || "").split(",").filter(r => r.length > 0);
+
+    // Get commercial bridge config from CDK context (optional - GovCloud only)
+    const commercialBridgeApiUrl = this.node.tryGetContext("commercialBridgeApiUrl") as string | undefined;
+    const commercialBridgeApiKeySecretArn = this.node.tryGetContext("commercialBridgeApiKeySecretArn") as string | undefined;
+
     new IsbComputeResources(this, {
       namespace: namespaceParam.namespace.valueAsString,
       orgMgtAccountId: orgMgtAccountId.valueAsString,
@@ -109,6 +116,9 @@ export class IsbComputeStack extends Stack {
       allowListedCidr: allowListedCidr.valueAsList,
       useStableTaggingCondition: useStableTagging.getCondition(),
       isGovCloud: isGovCloud,
+      isbManagedRegions: isbManagedRegions,
+      commercialBridgeApiUrl: commercialBridgeApiUrl,
+      commercialBridgeApiKeySecretArn: commercialBridgeApiKeySecretArn,
     });
 
     new ApplicationInsights(this, "IsbApplicationInsights", {

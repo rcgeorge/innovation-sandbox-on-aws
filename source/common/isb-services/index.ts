@@ -6,6 +6,8 @@ import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dy
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
+import { CommercialBridgeCostService } from "@amzn/innovation-sandbox-commons/isb-services/commercial-bridge-cost-service.js";
+import { ICostService } from "@amzn/innovation-sandbox-commons/isb-services/cost-service.js";
 import { CostExplorerService } from "@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import {
@@ -60,7 +62,10 @@ export namespace ServiceEnv {
 
   export type costExplorer = {
     USER_AGENT_EXTRA: string;
-  };
+    AWS_REGIONS?: string;
+    COMMERCIAL_BRIDGE_API_URL?: string;
+    COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN?: string;
+  } & Partial<sandboxAccountStore>; // Only needed for GovCloud commercial bridge
 
   export type emailService = {
     ISB_NAMESPACE: string;
@@ -145,7 +150,22 @@ export class IsbServices {
   public static costExplorer(
     env: ServiceEnv.costExplorer,
     credentials?: AwsCredentialIdentity | AwsCredentialIdentityProvider,
-  ) {
+  ): ICostService {
+    // Detect if this is a GovCloud deployment
+    const regions = env.AWS_REGIONS?.split(",") || [];
+    const isGovCloud = regions.some((r) => r.startsWith("us-gov-"));
+
+    // Use commercial bridge for GovCloud if configured
+    if (isGovCloud && env.COMMERCIAL_BRIDGE_API_URL && env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN && env.ACCOUNT_TABLE_NAME) {
+      return new CommercialBridgeCostService({
+        apiUrl: env.COMMERCIAL_BRIDGE_API_URL,
+        apiKeySecretArn: env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN,
+        govCloudRegions: regions.filter((r) => r.startsWith("us-gov-")),
+        sandboxAccountStore: IsbServices.sandboxAccountStore(env as ServiceEnv.sandboxAccountStore),
+      });
+    }
+
+    // Default: Use Cost Explorer SDK (commercial AWS)
     return new CostExplorerService({
       costExplorerClient: IsbClients.costExplorer(env, credentials),
     });

@@ -11,6 +11,10 @@ export const LeaseMonitoringEnvironmentSchema =
     ISB_NAMESPACE: z.string(),
     INTERMEDIATE_ROLE_ARN: z.string(),
     ORG_MGT_ROLE_ARN: z.string(),
+    ACCOUNT_TABLE_NAME: z.string(),
+    AWS_REGIONS: z.string().optional(),
+    COMMERCIAL_BRIDGE_API_URL: z.string().optional(),
+    COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN: z.string().optional(),
   });
 
 export type LeaseMonitoringEnvironment = z.infer<

@@ -27,6 +27,9 @@ export interface IsbComputeResourcesProps {
   allowListedCidr: string[];
   useStableTaggingCondition: CfnCondition;
   isGovCloud?: boolean;
+  isbManagedRegions: string[];
+  commercialBridgeApiUrl?: string;
+  commercialBridgeApiKeySecretArn?: string;
 }
 
 export class IsbComputeResources {
@@ -74,6 +77,9 @@ export class IsbComputeResources {
       orgMgtAccountId: props.orgMgtAccountId,
       idcAccountId: props.idcAccountId,
       isGovCloud: props.isGovCloud,
+      isbManagedRegions: props.isbManagedRegions,
+      commercialBridgeApiUrl: props.commercialBridgeApiUrl,
+      commercialBridgeApiKeySecretArn: props.commercialBridgeApiKeySecretArn,
     });
 
     new AccountCleaner(scope, "AccountCleaner", {
@@ -120,6 +126,9 @@ export class IsbComputeResources {
       namespace: props.namespace,
       orgMgtAccountId: props.orgMgtAccountId,
       idcAccountId: props.idcAccountId,
+      isbManagedRegions: props.isbManagedRegions,
+      commercialBridgeApiUrl: props.commercialBridgeApiUrl,
+      commercialBridgeApiKeySecretArn: props.commercialBridgeApiKeySecretArn,
     });
 
     new LogArchiving(scope, "LogArchiving", {

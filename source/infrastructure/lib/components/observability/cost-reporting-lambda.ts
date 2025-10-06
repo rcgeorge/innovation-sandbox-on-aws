@@ -8,7 +8,7 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
-import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import { PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import path from "path";
 
@@ -25,11 +25,15 @@ export interface CostReportingLambdaProps {
   readonly orgMgtAccountId: string;
   readonly idcAccountId: string;
   readonly namespace: string;
+  readonly isbManagedRegions: string[];
+  readonly commercialBridgeApiUrl?: string;
+  readonly commercialBridgeApiKeySecretArn?: string;
 }
 
 export class CostReportingLambda extends Construct {
   constructor(scope: Construct, id: string, props: CostReportingLambdaProps) {
     super(scope, id);
+
     const costReportingLambda = new IsbLambdaFunction(this, id, {
       description:
         "Scans the accounts and reports / logs aggregated monthly cost",
@@ -61,6 +65,9 @@ export class CostReportingLambda extends Construct {
         IDC_ACCOUNT_ID: props.idcAccountId,
         ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
         HUB_ACCOUNT_ID: `${Stack.of(scope).account}`,
+        AWS_REGIONS: props.isbManagedRegions.join(","),
+        COMMERCIAL_BRIDGE_API_URL: props.commercialBridgeApiUrl,
+        COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN: props.commercialBridgeApiKeySecretArn,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: CostReportingLambdaEnvironmentSchema,
@@ -83,6 +90,16 @@ export class CostReportingLambda extends Construct {
       costReportingLambda,
       IsbComputeStack.sharedSpokeConfig.data.accountTable,
     );
+
+    // Grant Secrets Manager permission for commercial bridge API key (GovCloud only)
+    if (props.commercialBridgeApiKeySecretArn) {
+      costReportingLambda.lambdaFunction.addToRolePolicy(
+        new PolicyStatement({
+          actions: ["secretsmanager:GetSecretValue"],
+          resources: [props.commercialBridgeApiKeySecretArn],
+        }),
+      );
+    }
 
     new CfnSchedule(scope, "CostReportingScheduledEvent", {
       description: "triggers Cost Monitoring on the forth day of every month",

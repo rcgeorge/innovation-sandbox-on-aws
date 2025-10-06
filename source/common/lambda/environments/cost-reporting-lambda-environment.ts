@@ -15,6 +15,9 @@ export const CostReportingLambdaEnvironmentSchema =
     IDC_ACCOUNT_ID: z.string(),
     ORG_MGT_ACCOUNT_ID: z.string(),
     HUB_ACCOUNT_ID: z.string(),
+    AWS_REGIONS: z.string().optional(),
+    COMMERCIAL_BRIDGE_API_URL: z.string().optional(),
+    COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN: z.string().optional(),
   });
 
 export type CostReportingLambdaEnvironment = z.infer<

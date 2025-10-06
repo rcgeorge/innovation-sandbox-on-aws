@@ -10,6 +10,7 @@ import {
 } from "@aws-sdk/client-cost-explorer";
 import { DateTime } from "luxon";
 import { DateTimeUnit } from "luxon/src/datetime.js";
+import { ICostService } from "@amzn/innovation-sandbox-commons/isb-services/cost-service.js";
 
 const logger = new Logger();
 export const COST_EXPLORER_CONFIG = {
@@ -55,7 +56,7 @@ function* batch<T>(
   }
 }
 
-export class CostExplorerService {
+export class CostExplorerService implements ICostService {
   readonly costExplorerClient: CostExplorerClient;
 
   constructor(props: { costExplorerClient: CostExplorerClient }) {
