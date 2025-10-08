@@ -10,6 +10,7 @@ import { Construct } from 'constructs';
 interface ApiGatewayStackProps extends cdk.StackProps {
   costInfoLambda: lambda.IFunction;
   createGovCloudAccountLambda: lambda.IFunction;
+  acceptInvitationLambda: lambda.IFunction;
 }
 
 export class ApiGatewayStack extends cdk.Stack {
@@ -85,6 +86,17 @@ export class ApiGatewayStack extends cdk.Stack {
     // Create /govcloud-accounts resource
     const govCloudAccountsResource = this.api.root.addResource('govcloud-accounts');
 
+    // GET method for listing all GovCloud accounts
+    govCloudAccountsResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(props.createGovCloudAccountLambda, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+      }
+    );
+
     // POST method for creating accounts
     govCloudAccountsResource.addMethod(
       'POST',
@@ -102,6 +114,19 @@ export class ApiGatewayStack extends cdk.Stack {
     requestIdResource.addMethod(
       'GET',
       new apigateway.LambdaIntegration(props.createGovCloudAccountLambda, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+      }
+    );
+
+    // POST method for accepting organization invitation
+    // Pattern: /govcloud-accounts/accept-invitation (accountId in body instead of path)
+    const acceptInvitationResource = govCloudAccountsResource.addResource('accept-invitation');
+    acceptInvitationResource.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(props.acceptInvitationLambda, {
         proxy: true,
       }),
       {

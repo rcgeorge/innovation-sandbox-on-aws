@@ -63,14 +63,50 @@ interface NodejsLayerVersionProps {
   description: string;
 }
 
+/**
+ * Helper function to remove directory with retry logic for Windows compatibility
+ */
+function removeDirectoryWithRetry(dirPath: string, maxRetries = 5): void {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      rmSync(dirPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      return;
+    } catch (error: any) {
+      if (attempt === maxRetries - 1) {
+        // Last attempt - try using system commands as fallback
+        try {
+          if (process.platform === "win32") {
+            execSync(`rmdir /s /q "${dirPath}"`, { stdio: "ignore" });
+          } else {
+            execSync(`rm -rf "${dirPath}"`, { stdio: "ignore" });
+          }
+          return;
+        } catch (fallbackError) {
+          throw new Error(
+            `Failed to remove directory ${dirPath} after ${maxRetries} attempts: ${error.message}`
+          );
+        }
+      }
+      // Wait before retrying (exponential backoff)
+      const delay = 100 * Math.pow(2, attempt);
+      execSync(`node -e "setTimeout(() => {}, ${delay})"`);
+    }
+  }
+}
+
 class NodejsLayerVersion extends LayerVersion {
   constructor(scope: Construct, id: string, props: NodejsLayerVersionProps) {
     //prettier-ignore
     execSync("npm install --workspaces=false --install-links", { // NOSONAR typescript:S4036 - only used in cdk synth process
       cwd: props.path,
     });
-    existsSync(path.join(props.path, "dist")) &&
-      rmSync(path.join(props.path, "dist"), { recursive: true });
+
+    // Clean up dist directory with retry logic for Windows compatibility
+    const distPath = path.join(props.path, "dist");
+    if (existsSync(distPath)) {
+      removeDirectoryWithRetry(distPath);
+    }
+
     mkdirSync(path.join(props.path, "dist/nodejs"), { recursive: true });
     moveSync(
       path.join(props.path, "node_modules"),

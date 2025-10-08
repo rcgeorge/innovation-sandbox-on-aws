@@ -8,6 +8,7 @@ import {
   APIGatewayProxyEventPathParameters,
   APIGatewayProxyResult,
 } from "aws-lambda";
+import { SFNClient, StartExecutionCommand, DescribeExecutionCommand } from "@aws-sdk/client-sfn";
 
 import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import {
@@ -15,7 +16,9 @@ import {
   AccountNotInQuarantineError,
   InnovationSandbox,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
+import { CommercialBridgeClient } from "@amzn/innovation-sandbox-commons/isb-services/commercial-bridge-client.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
+import { z } from "zod";
 import {
   AccountLambdaEnvironment,
   AccountLambdaEnvironmentSchema,
@@ -78,6 +81,23 @@ const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
     path: "/accounts/unregistered",
     method: "GET",
     handler: middyFactory().handler(findUnregisteredAccountsHandler),
+  },
+  {
+    path: "/accounts/govcloud/create",
+    method: "POST",
+    handler: middyFactory()
+      .use(httpJsonBodyParser())
+      .handler(createGovCloudAccountHandler),
+  },
+  {
+    path: "/accounts/govcloud/create/status/{executionId}",
+    method: "GET",
+    handler: middyFactory().handler(getGovCloudAccountStatusHandler),
+  },
+  {
+    path: "/accounts/govcloud/available",
+    method: "GET",
+    handler: middyFactory().handler(getAvailableGovCloudAccountsHandler),
   },
 ];
 
@@ -436,4 +456,262 @@ function parseAwsAccountIdFromPathParameters(
     throw createHttpJSendValidationError(parsedPathParametersResponse.error);
   }
   return parsedPathParametersResponse.data.awsAccountId;
+}
+
+const CreateGovCloudAccountRequestSchema = z.discriminatedUnion("mode", [
+  // Create new account mode
+  z.object({
+    mode: z.literal("create"),
+    accountName: z.string().min(1).max(50),
+    email: z.string().email(),
+  }),
+  // Join existing account mode
+  z.object({
+    mode: z.literal("join-existing"),
+    govCloudAccountId: z.string().regex(/^\d{12}$/),
+    commercialAccountId: z.string().regex(/^\d{12}$/),
+    accountName: z.string().min(1).max(50),
+  }),
+]);
+
+async function createGovCloudAccountHandler(
+  event: IsbApiEvent,
+  context: AccountsApiContext,
+): Promise<APIGatewayProxyResult> {
+  // Parse and validate request
+  const bodyParseResult = CreateGovCloudAccountRequestSchema.safeParse(event.body);
+  if (!bodyParseResult.success) {
+    throw createHttpJSendValidationError(bodyParseResult.error);
+  }
+
+  const requestData = bodyParseResult.data;
+
+  // Check if Step Function is configured
+  if (!context.env.GOVCLOUD_CREATION_STEP_FUNCTION_ARN) {
+    throw createHttpJSendError({
+      statusCode: 501,
+      data: {
+        errors: [{
+          message: "GovCloud account creation not configured. Step Function ARN is missing."
+        }]
+      }
+    });
+  }
+
+  logger.info("Starting GovCloud account workflow", { mode: requestData.mode });
+
+  // Start Step Function execution with mode-specific input
+  const sfnClient = new SFNClient({});
+
+  try {
+    const execution = await sfnClient.send(new StartExecutionCommand({
+      stateMachineArn: context.env.GOVCLOUD_CREATION_STEP_FUNCTION_ARN,
+      input: JSON.stringify(requestData),
+    }));
+
+    // Extract execution ID from ARN
+    const executionArn = execution.executionArn!;
+    const executionId = executionArn.split(':').pop()!;
+
+    logger.info("Step Function execution started", {
+      executionArn,
+      executionId,
+      mode: requestData.mode,
+    });
+
+    const message = requestData.mode === "create"
+      ? "GovCloud account creation started. This will take 5-10 minutes."
+      : "GovCloud account join workflow started. This will take 3-5 minutes.";
+
+    return {
+      statusCode: 202,
+      body: JSON.stringify({
+        status: "success",
+        data: {
+          executionId,
+          executionArn,
+          message,
+          mode: requestData.mode,
+        }
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    };
+  } catch (error) {
+    logger.error("Failed to start Step Function execution", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+
+    throw createHttpJSendError({
+      statusCode: 500,
+      data: {
+        errors: [{
+          message: `Failed to start workflow: ${error instanceof Error ? error.message : String(error)}`
+        }]
+      }
+    });
+  }
+}
+
+async function getGovCloudAccountStatusHandler(
+  event: IsbApiEvent,
+  context: AccountsApiContext,
+): Promise<APIGatewayProxyResult> {
+  const executionId = event.pathParameters?.executionId;
+
+  if (!executionId) {
+    throw createHttpJSendValidationError(
+      z.object({ executionId: z.string() }).safeParse({}).error!
+    );
+  }
+
+  if (!context.env.GOVCLOUD_CREATION_STEP_FUNCTION_ARN) {
+    throw createHttpJSendError({
+      statusCode: 501,
+      data: {
+        errors: [{
+          message: "GovCloud account creation not configured."
+        }]
+      }
+    });
+  }
+
+  // Reconstruct execution ARN from executionId
+  const executionArn = `${context.env.GOVCLOUD_CREATION_STEP_FUNCTION_ARN.replace(':stateMachine:', ':execution:')}:${executionId}`;
+
+  const sfnClient = new SFNClient({});
+
+  try {
+    const execution = await sfnClient.send(new DescribeExecutionCommand({
+      executionArn,
+    }));
+
+    const status = execution.status;
+    let result: any = null;
+
+    if (status === "SUCCEEDED" && execution.output) {
+      result = JSON.parse(execution.output);
+    }
+
+    logger.info("Fetched Step Function execution status", { executionId, status });
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        status: "success",
+        data: {
+          executionId,
+          status,
+          result,
+          startDate: execution.startDate,
+          stopDate: execution.stopDate,
+        }
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    };
+  } catch (error) {
+    logger.error("Failed to fetch execution status", {
+      executionId,
+      error: error instanceof Error ? error.message : String(error)
+    });
+
+    throw createHttpJSendError({
+      statusCode: 500,
+      data: {
+        errors: [{
+          message: `Failed to fetch status: ${error instanceof Error ? error.message : String(error)}`
+        }]
+      }
+    });
+  }
+}
+
+async function getAvailableGovCloudAccountsHandler(
+  event: IsbApiEvent,
+  context: AccountsApiContext,
+): Promise<APIGatewayProxyResult> {
+  // Check if commercial bridge is configured
+  if (!context.env.COMMERCIAL_BRIDGE_API_URL || !context.env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN) {
+    throw createHttpJSendError({
+      statusCode: 501,
+      data: {
+        errors: [{
+          message: "GovCloud account listing not configured. Commercial bridge API settings are missing."
+        }]
+      }
+    });
+  }
+
+  logger.info("Fetching available GovCloud accounts");
+
+  try {
+    // Get all GovCloud accounts from commercial bridge
+    const commercialBridge = new CommercialBridgeClient(
+      context.env.COMMERCIAL_BRIDGE_API_URL,
+      context.env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN
+    );
+
+    const { accounts } = await commercialBridge.listGovCloudAccounts();
+
+    // Get existing accounts from DynamoDB to filter them out
+    const accountStore = IsbServices.sandboxAccountStore(context.env);
+
+    // Fetch all accounts using pagination
+    let allExistingAccounts: any[] = [];
+    let pageIdentifier: string | undefined = undefined;
+    do {
+      const result = await accountStore.findAll({ pageIdentifier, pageSize: 100 });
+      allExistingAccounts = [...allExistingAccounts, ...result.result];
+      pageIdentifier = result.nextPageIdentifier || undefined;
+    } while (pageIdentifier);
+
+    const existingGovCloudIds = new Set(
+      allExistingAccounts.map(account => account.awsAccountId)
+    );
+    const existingCommercialIds = new Set(
+      allExistingAccounts
+        .filter(account => account.commercialLinkedAccountId)
+        .map(account => account.commercialLinkedAccountId)
+    );
+
+    // Filter out accounts already in the sandbox
+    const availableAccounts = accounts.filter(
+      account =>
+        !existingGovCloudIds.has(account.govCloudAccountId) &&
+        !existingCommercialIds.has(account.commercialAccountId)
+    );
+
+    logger.info("Available GovCloud accounts retrieved", {
+      total: accounts.length,
+      available: availableAccounts.length,
+      filtered: accounts.length - availableAccounts.length,
+    });
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        status: "success",
+        data: availableAccounts,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    };
+  } catch (error) {
+    logger.error("Failed to fetch available GovCloud accounts", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+
+    throw createHttpJSendError({
+      statusCode: 500,
+      data: {
+        errors: [{
+          message: `Failed to fetch available accounts: ${error instanceof Error ? error.message : String(error)}`
+        }]
+      }
+    });
+  }
 }

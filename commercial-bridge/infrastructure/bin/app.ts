@@ -5,7 +5,7 @@
 
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { CostInfoLambdaStack, CreateGovCloudAccountLambdaStack } from '../lib/lambda-stacks';
+import { CostInfoLambdaStack, CreateGovCloudAccountLambdaStack, AcceptInvitationLambdaStack } from '../lib/lambda-stacks';
 import { ApiGatewayStack } from '../lib/api-gateway-stack';
 
 const app = new cdk.App();
@@ -19,15 +19,18 @@ const env = {
 // Create Lambda stacks
 const costInfoStack = new CostInfoLambdaStack(app, 'CostInfoLambdaStack', { env });
 const createGovCloudAccountStack = new CreateGovCloudAccountLambdaStack(app, 'CreateGovCloudAccountLambdaStack', { env });
+const acceptInvitationStack = new AcceptInvitationLambdaStack(app, 'AcceptInvitationLambdaStack', { env });
 
 // Create API Gateway stack (depends on Lambda stacks)
 const apiStack = new ApiGatewayStack(app, 'ApiGatewayStack', {
   env,
   costInfoLambda: costInfoStack.lambdaFunction,
   createGovCloudAccountLambda: createGovCloudAccountStack.lambdaFunction,
+  acceptInvitationLambda: acceptInvitationStack.lambdaFunction,
 });
 
 apiStack.addDependency(costInfoStack);
 apiStack.addDependency(createGovCloudAccountStack);
+apiStack.addDependency(acceptInvitationStack);
 
 app.synth();

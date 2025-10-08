@@ -254,6 +254,17 @@ export class IsbAccountPoolResources {
             ],
           }),
           new PolicyStatement({
+            actions: [
+              "organizations:InviteAccountToOrganization",
+              "organizations:AcceptHandshake",
+              "organizations:ListHandshakesForAccount",
+              "organizations:ListHandshakesForOrganization",
+              "organizations:ListRoots",
+              "organizations:ListParents",
+            ],
+            resources: ["*"], // These actions don't support resource-level permissions
+          }),
+          new PolicyStatement({
             actions: ["organizations:DescribeAccount"],
             resources: [
               Stack.of(scope).formatArn({

@@ -1,10 +1,13 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import {
+  AcceptHandshakeCommand,
   Account,
   ConcurrentModificationException,
   DescribeAccountCommand,
+  InviteAccountToOrganizationCommand,
   ListAccountsForParentCommand,
+  ListRootsCommand,
   MoveAccountCommand,
   OrganizationalUnit,
   OrganizationsClient,
@@ -12,6 +15,7 @@ import {
   paginateListOrganizationalUnitsForParent,
   TooManyRequestsException,
 } from "@aws-sdk/client-organizations";
+import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
 
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import {
@@ -186,5 +190,135 @@ export class SandboxOuService {
         email: Account.Email,
       }
     );
+  }
+
+  public async inviteAccountToOrganization(accountId: string): Promise<{ handshakeId: string }> {
+    try {
+      const response = await this.orgsClient.send(
+        new InviteAccountToOrganizationCommand({
+          Target: {
+            Id: accountId,
+            Type: "ACCOUNT"
+          }
+        })
+      );
+
+      if (!response.Handshake?.Id) {
+        throw new Error("Failed to get handshake ID from invitation response");
+      }
+
+      return { handshakeId: response.Handshake.Id };
+    } catch (error: any) {
+      // If account is already in the organization, return a placeholder handshake ID
+      if (error.name === "HandshakeConstraintViolationException" &&
+          error.message?.includes("already a member")) {
+        return { handshakeId: "already-joined" };
+      }
+
+      // If invitation already exists, find it and return the existing handshake ID
+      if (error.name === "DuplicateHandshakeException") {
+        const { ListHandshakesForOrganizationCommand } = await import("@aws-sdk/client-organizations");
+        const listResponse = await this.orgsClient.send(
+          new ListHandshakesForOrganizationCommand({
+            Filter: {
+              ActionType: "INVITE"
+            }
+          })
+        );
+
+        const existingHandshake = listResponse.Handshakes?.find(
+          h => h.Parties?.some(p => p.Id === accountId) && h.State === "OPEN"
+        );
+
+        if (existingHandshake?.Id) {
+          return { handshakeId: existingHandshake.Id };
+        }
+
+        throw new Error(`Duplicate invitation exists but couldn't find open handshake for account ${accountId}`);
+      }
+
+      throw error;
+    }
+  }
+
+  public async acceptHandshakeAsAccount(
+    accountId: string,
+    handshakeId: string
+  ): Promise<void> {
+    // Assume OrganizationAccountAccessRole in the account being invited
+    const stsClient = new STSClient({ region: this.orgsClient.config.region as string });
+
+    const assumeRoleResponse = await stsClient.send(
+      new AssumeRoleCommand({
+        RoleArn: `arn:aws-us-gov:iam::${accountId}:role/OrganizationAccountAccessRole`,
+        RoleSessionName: "AcceptOrgInvitation"
+      })
+    );
+
+    // Create Organizations client with the assumed role credentials
+    const accountOrgsClient = new OrganizationsClient({
+      region: this.orgsClient.config.region,
+      credentials: {
+        accessKeyId: assumeRoleResponse.Credentials!.AccessKeyId!,
+        secretAccessKey: assumeRoleResponse.Credentials!.SecretAccessKey!,
+        sessionToken: assumeRoleResponse.Credentials!.SessionToken!
+      }
+    });
+
+    // Accept the handshake
+    await accountOrgsClient.send(
+      new AcceptHandshakeCommand({
+        HandshakeId: handshakeId
+      })
+    );
+  }
+
+  public async moveAccountToEntryOu(accountId: string): Promise<void> {
+    // Get Entry OU ID
+    const entryOu = await this.getOuByName("Entry");
+
+    // Check if account is already in Entry OU
+    const { ListParentsCommand } = await import("@aws-sdk/client-organizations");
+    const parentsResponse = await this.orgsClient.send(
+      new ListParentsCommand({ ChildId: accountId })
+    );
+
+    const currentParentId = parentsResponse.Parents?.[0]?.Id;
+
+    if (currentParentId === entryOu.Id) {
+      // Account already in Entry OU, nothing to do
+      return;
+    }
+
+    // Get root ID for source (account is either at root or in another OU)
+    const rootResponse = await this.orgsClient.send(new ListRootsCommand({}));
+    const rootId = rootResponse.Roots?.[0]?.Id;
+
+    if (!rootId) {
+      throw new Error("Failed to get organization root ID");
+    }
+
+    // Use current parent as source (could be root or another OU)
+    const sourceParentId = currentParentId || rootId;
+
+    // Move account to Entry OU
+    await this.orgsClient.send(
+      new MoveAccountCommand({
+        AccountId: accountId,
+        SourceParentId: sourceParentId,
+        DestinationParentId: entryOu.Id
+      })
+    );
+  }
+
+  private async getOuByName(ouName: IsbOu): Promise<OrganizationalUnit> {
+    const childOus = await this.listChildrenOus(this.sandboxOuId);
+    const ou = childOus.find(ou => ou.Name === ouName);
+
+    if (!ou) {
+      throw new Error(`OU ${ouName} not found under sandbox OU ${this.sandboxOuId}`);
+    }
+
+    return ou;
   }
 }

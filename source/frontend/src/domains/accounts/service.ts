@@ -72,4 +72,41 @@ export class AccountService {
   async cleanupAccount(awsAccountId: string): Promise<void> {
     await this.api.post(`/accounts/${awsAccountId}/retryCleanup`);
   }
+
+  async createGovCloudAccount(params:
+    | { mode: "create"; accountName: string; email: string }
+    | { mode: "join-existing"; govCloudAccountId: string; commercialAccountId: string; accountName: string }
+  ): Promise<{
+    executionId: string;
+    executionArn: string;
+    message: string;
+    mode: string;
+  }> {
+    return await this.api.post(`/accounts/govcloud/create`, params);
+  }
+
+  async getGovCloudAccountStatus(executionId: string): Promise<{
+    executionId: string;
+    status: string;
+    result?: {
+      govCloudAccountId: string;
+      commercialAccountId: string;
+      status: string;
+      message: string;
+    };
+    startDate?: Date;
+    stopDate?: Date;
+  }> {
+    return await this.api.get(`/accounts/govcloud/create/status/${executionId}`);
+  }
+
+  async getAvailableGovCloudAccounts(): Promise<Array<{
+    requestId: string;
+    govCloudAccountId: string;
+    commercialAccountId: string;
+    accountName: string;
+    createTime: string;
+  }>> {
+    return await this.api.get(`/accounts/govcloud/available`);
+  }
 }

@@ -55,3 +55,53 @@ export const useCleanupAccount = () => {
       client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" }),
   });
 };
+
+export const useCreateGovCloudAccount = () => {
+  return useMutation({
+    mutationFn: async (params:
+      | { mode: "create"; accountName: string; email: string }
+      | { mode: "join-existing"; govCloudAccountId: string; commercialAccountId: string; accountName: string }
+    ) => await new AccountService().createGovCloudAccount(params),
+  });
+};
+
+export const useGetGovCloudAccountStatus = (executionId: string | null, enabled: boolean = true) => {
+  const client = useQueryClient();
+  return useQuery({
+    queryKey: ["govCloudAccountStatus", executionId],
+    queryFn: async () => {
+      if (!executionId) throw new Error("No execution ID");
+      return await new AccountService().getGovCloudAccountStatus(executionId);
+    },
+    enabled: enabled && !!executionId,
+    refetchInterval: (query) => {
+      // Stop polling if status is terminal (SUCCEEDED, FAILED, TIMED_OUT, ABORTED)
+      const data = query.state.data;
+      if (data?.status && ["SUCCEEDED", "FAILED", "TIMED_OUT", "ABORTED"].includes(data.status)) {
+        // Invalidate accounts when succeeded
+        if (data.status === "SUCCEEDED") {
+          client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" });
+          client.invalidateQueries({
+            queryKey: ["unregisteredAccounts"],
+            refetchType: "all",
+          });
+          client.invalidateQueries({
+            queryKey: ["availableGovCloudAccounts"],
+            refetchType: "all",
+          });
+        }
+        return false;
+      }
+      return 5000; // Poll every 5 seconds
+    },
+  });
+};
+
+export const useGetAvailableGovCloudAccounts = (enabled: boolean = true) => {
+  return useQuery({
+    queryKey: ["availableGovCloudAccounts"],
+    queryFn: async () => await new AccountService().getAvailableGovCloudAccounts(),
+    enabled,
+    staleTime: 30000, // Cache for 30 seconds
+  });
+};

@@ -32,6 +32,14 @@ function validateEmail(email: string): boolean {
   return regex.test(email);
 }
 
+function createUniqueEmail(baseEmail: string): string {
+  // Add timestamp-based alias to make email unique
+  // e.g., "user@example.com" becomes "user+govcloud-1728252345@example.com"
+  const timestamp = Date.now();
+  const [localPart, domain] = baseEmail.split('@');
+  return `${localPart}+govcloud-${timestamp}@${domain}`;
+}
+
 function parseRequestBody(event: APIGatewayProxyEvent): CreateAccountRequest | { error: string } {
   if (!event.body) {
     return { error: "Request body is required" };
@@ -48,8 +56,12 @@ function parseRequestBody(event: APIGatewayProxyEvent): CreateAccountRequest | {
       return { error: "accountName is required" };
     }
 
+    // Create unique email with alias
+    const uniqueEmail = createUniqueEmail(body.email);
+    console.log(`Using unique email: ${uniqueEmail} (base: ${body.email})`);
+
     return {
-      email: body.email,
+      email: uniqueEmail,
       accountName: body.accountName,
       roleName: body.roleName || "OrganizationAccountAccessRole",
       iamUserAccessToBilling: body.iamUserAccessToBilling || "DENY",
@@ -112,12 +124,47 @@ export const handler = async (
   console.log("Event:", JSON.stringify(event, null, 2));
 
   try {
-    // Check if this is a status check request
-    const pathParts = event.path.split("/");
-    const isStatusCheck = pathParts[pathParts.length - 2] === "govcloud-accounts" && pathParts.length > 3;
-    const requestId = isStatusCheck ? pathParts[pathParts.length - 1] : null;
+    console.log(`HTTP Method: ${event.httpMethod}, Path: ${event.path}`);
+    console.log(`Path parameters:`, JSON.stringify(event.pathParameters));
 
-    // Handle status check
+    // Check if this is a status check request using pathParameters (API Gateway extracts these)
+    const requestId = event.pathParameters?.requestId || null;
+
+    console.log(`Extracted requestId: ${requestId}`);
+
+    // Handle listing all GovCloud accounts
+    if (event.httpMethod === "GET" && !requestId) {
+      console.log("Listing all GovCloud account creation requests");
+
+      const { ListCreateAccountStatusCommand } = await import("@aws-sdk/client-organizations");
+      const listCommand = new ListCreateAccountStatusCommand({
+        States: [CreateAccountState.SUCCEEDED],
+      });
+
+      const listResponse = await organizations.send(listCommand);
+      const accounts = (listResponse.CreateAccountStatuses || [])
+        .filter(status => status.GovCloudAccountId) // Only GovCloud accounts
+        .map(status => ({
+          requestId: status.Id!,
+          govCloudAccountId: status.GovCloudAccountId!,
+          commercialAccountId: status.AccountId!,
+          accountName: status.AccountName || "Unknown",
+          createTime: status.CompletedTimestamp?.toISOString() || "",
+        }));
+
+      console.log(`Found ${accounts.length} GovCloud accounts`);
+
+      return {
+        statusCode: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        body: JSON.stringify({ accounts }),
+      };
+    }
+
+    // Handle status check for specific request
     if (event.httpMethod === "GET" && requestId) {
       console.log(`Checking status for request: ${requestId}`);
 

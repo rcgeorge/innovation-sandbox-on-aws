@@ -98,6 +98,7 @@ export class CreateGovCloudAccountLambdaStack extends cdk.Stack {
         actions: [
           'organizations:CreateGovCloudAccount',
           'organizations:DescribeCreateAccountStatus',
+          'organizations:ListCreateAccountStatus',
           'organizations:ListAccounts',
           'organizations:DescribeAccount',
         ],
@@ -113,3 +114,52 @@ export class CreateGovCloudAccountLambdaStack extends cdk.Stack {
     });
   }
 }
+
+export class AcceptInvitationLambdaStack extends cdk.Stack {
+  public readonly lambdaFunction: lambda.IFunction;
+
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+
+    // Create Lambda function for accepting GovCloud org invitations
+    this.lambdaFunction = new nodejs.NodejsFunction(this, 'AcceptInvitationFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: 'handler',
+      entry: path.join(__dirname, '../../lambdas/accept-invitation/src/handler.ts'),
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 256,
+      logRetention: logs.RetentionDays.ONE_MONTH,
+      environment: {
+        NODE_OPTIONS: '--enable-source-maps',
+      },
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        target: 'es2022',
+      },
+    });
+
+    // Grant STS AssumeRole permissions for cross-partition role assumption
+    // Note: Using wildcard because CloudFormation in commercial partition doesn't allow GovCloud ARNs
+    // but STS AssumeRole works at runtime for linked account role assumption
+    this.lambdaFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'sts:AssumeRole',
+        ],
+        resources: [
+          'arn:*:iam::*:role/OrganizationAccountAccessRole'
+        ],
+      })
+    );
+
+    // CloudFormation outputs
+    new cdk.CfnOutput(this, 'AcceptInvitationLambdaArn', {
+      value: this.lambdaFunction.functionArn,
+      description: 'ARN of Accept Invitation Lambda function',
+      exportName: 'AcceptInvitationLambdaArn',
+    });
+  }
+}
+

@@ -67,6 +67,15 @@ export const authorizationMap: AuthorizationMapType = {
   "/accounts/unregistered": {
     GET: ["Admin"],
   },
+  "/accounts/govcloud/create": {
+    POST: ["Admin"],
+  },
+  "/accounts/govcloud/create/status/{param}": {
+    GET: ["Admin"],
+  },
+  "/accounts/govcloud/available": {
+    GET: ["Admin"],
+  },
   "/users": {
     GET: ["Admin", "Manager"],
   },
