@@ -16,7 +16,7 @@ import {
   AccountNotInQuarantineError,
   InnovationSandbox,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
-import { CommercialBridgeClient } from "@amzn/innovation-sandbox-commons/isb-services/commercial-bridge-client.js";
+import { createCommercialBridgeClient } from "@amzn/innovation-sandbox-commons/isb-services/commercial-bridge-factory.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import { z } from "zod";
 import {
@@ -649,10 +649,7 @@ async function getAvailableGovCloudAccountsHandler(
 
   try {
     // Get all GovCloud accounts from commercial bridge
-    const commercialBridge = new CommercialBridgeClient(
-      context.env.COMMERCIAL_BRIDGE_API_URL,
-      context.env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN
-    );
+    const commercialBridge = createCommercialBridgeClient(context.env);
 
     const { accounts } = await commercialBridge.listGovCloudAccounts();
 

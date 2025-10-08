@@ -15,6 +15,7 @@ import path from "path";
 export class LambdaLayers extends Construct {
   readonly commonLayerVersion: LayerVersion;
   readonly dependencyLayerVersion: LayerVersion;
+  readonly rolesAnywhereHelperLayer: LayerVersion;
   readonly layers: LayerVersion[];
   private static instances: { [key: string]: LambdaLayers } = {};
 
@@ -37,6 +38,20 @@ export class LambdaLayers extends Construct {
         path: path.join(__dirname, "..", "..", "..", "layers", "dependencies"),
         description:
           "Third party runtime dependencies for Innovation Sandbox on AWS",
+      },
+    );
+
+    // IAM Roles Anywhere credential helper layer
+    this.rolesAnywhereHelperLayer = new LayerVersion(
+      this,
+      "RolesAnywhereHelperLayer",
+      {
+        code: Code.fromAsset(
+          path.join(__dirname, "..", "..", "..", "layers", "roles-anywhere-helper"),
+        ),
+        description: "AWS IAM Roles Anywhere credential helper for certificate-based authentication",
+        compatibleRuntimes: [Runtime.NODEJS_22_X],
+        compatibleArchitectures: [Architecture.ARM_64],
       },
     );
 

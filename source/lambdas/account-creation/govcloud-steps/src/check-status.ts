@@ -4,7 +4,7 @@
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 
-import { CommercialBridgeClient } from "@amzn/innovation-sandbox-commons/isb-services/commercial-bridge-client.js";
+import { createCommercialBridgeClient } from "@amzn/innovation-sandbox-commons/isb-services/commercial-bridge-factory.js";
 import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middleware/base-middleware-bundle.js";
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
 import { CommercialBridgeEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/commercial-bridge-environment.js";
@@ -42,10 +42,7 @@ async function checkStatusHandler(
 ): Promise<CheckStatusOutput> {
   logger.info("Checking account creation status", { requestId: event.requestId });
 
-  const commercialBridge = new CommercialBridgeClient(
-    context.env.COMMERCIAL_BRIDGE_API_URL,
-    context.env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN,
-  );
+  const commercialBridge = createCommercialBridgeClient(context.env);
 
   const result = await commercialBridge.getGovCloudAccountStatus(event.requestId);
 

@@ -178,32 +178,35 @@ export class GovCloudAccountCreationStepFunctionV3 extends Construct {
       resultPath: "$.statusCheck",
     });
 
-    const extractStatusResult = new Pass(this, "ExtractStatusResult", {
+    // Don't extract fields here - just check status directly from payload
+    const accountCreationFailed = new Fail(this, "AccountCreationFailed", {
+      error: "AccountCreationFailed",
+      cause: "Account creation failed in commercial bridge",
+    });
+
+    // Extract account IDs only when SUCCEEDED
+    const extractSuccessfulCreation = new Pass(this, "ExtractSuccessfulCreation", {
       parameters: {
-        "requestId.$": "$.requestId",
-        "status.$": "$.statusCheck.Payload.status",
         "govCloudAccountId.$": "$.statusCheck.Payload.govCloudAccountId",
         "commercialAccountId.$": "$.statusCheck.Payload.commercialAccountId",
         "accountName.$": "$.statusCheck.Payload.accountName",
-        "email.$": "$.statusCheck.Payload.email",
-        "message.$": "$.statusCheck.Payload.message",
       },
     });
 
-    const accountCreationFailed = new Fail(this, "AccountCreationFailed", {
-      error: "AccountCreationFailed",
-      causePath: "$.message",
-    });
-
     const accountReadyChoice = new Choice(this, "AccountCreationComplete?")
-      .when(Condition.stringEquals("$.status", "SUCCEEDED"), joinFlowChain)
-      .when(Condition.stringEquals("$.status", "FAILED"), accountCreationFailed)
-      .otherwise(waitForCreation);
+      .when(
+        Condition.stringEquals("$.statusCheck.Payload.status", "SUCCEEDED"),
+        extractSuccessfulCreation.next(joinFlowChain)
+      )
+      .when(
+        Condition.stringEquals("$.statusCheck.Payload.status", "FAILED"),
+        accountCreationFailed
+      )
+      .otherwise(waitForCreation); // IN_PROGRESS - loop back
 
     // Chain waitForCreation to loop back
     waitForCreation.next(checkStatus);
-    checkStatus.next(extractStatusResult);
-    extractStatusResult.next(accountReadyChoice);
+    checkStatus.next(accountReadyChoice);
 
     const createFlowChain = Chain.start(initiateCreation)
       .next(extractCreationResult)

@@ -23,6 +23,11 @@ export const AccountLambdaEnvironmentSchema =
     HUB_ACCOUNT_ID: z.string(),
     COMMERCIAL_BRIDGE_API_URL: z.string().optional(),
     COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN: z.string().optional(),
+    // IAM Roles Anywhere configuration (optional)
+    COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN: z.string().optional(),
+    COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN: z.string().optional(),
+    COMMERCIAL_BRIDGE_PROFILE_ARN: z.string().optional(),
+    COMMERCIAL_BRIDGE_ROLE_ARN: z.string().optional(),
     GOVCLOUD_CREATION_STEP_FUNCTION_ARN: z.string().optional(),
   });
 

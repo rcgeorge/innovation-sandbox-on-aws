@@ -11,6 +11,8 @@ import {
   CommercialBridgeAccountMappingNotFoundError,
   CommercialBridgeClient,
 } from "@amzn/innovation-sandbox-commons/isb-services/commercial-bridge-client.js";
+import { createCommercialBridgeClient } from "@amzn/innovation-sandbox-commons/isb-services/commercial-bridge-factory.js";
+import { CommercialBridgeEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/commercial-bridge-environment.js";
 
 const logger = new Logger({ serviceName: "CommercialBridgeCostService" });
 
@@ -19,16 +21,12 @@ export class CommercialBridgeCostService implements ICostService {
 
   constructor(
     private readonly config: {
-      apiUrl: string;
-      apiKeySecretArn: string;
+      commercialBridgeEnv: CommercialBridgeEnvironment;
       govCloudRegions: string[];
       sandboxAccountStore: SandboxAccountStore;
     },
   ) {
-    this.client = new CommercialBridgeClient(
-      config.apiUrl,
-      config.apiKeySecretArn,
-    );
+    this.client = createCommercialBridgeClient(config.commercialBridgeEnv);
   }
 
   async getCostForLeases(

@@ -65,6 +65,11 @@ export namespace ServiceEnv {
     AWS_REGIONS?: string;
     COMMERCIAL_BRIDGE_API_URL?: string;
     COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN?: string;
+    // IAM Roles Anywhere configuration (optional)
+    COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN?: string;
+    COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN?: string;
+    COMMERCIAL_BRIDGE_PROFILE_ARN?: string;
+    COMMERCIAL_BRIDGE_ROLE_ARN?: string;
   } & Partial<sandboxAccountStore>; // Only needed for GovCloud commercial bridge
 
   export type emailService = {
@@ -156,10 +161,17 @@ export class IsbServices {
     const isGovCloud = regions.some((r) => r.startsWith("us-gov-"));
 
     // Use commercial bridge for GovCloud if configured
-    if (isGovCloud && env.COMMERCIAL_BRIDGE_API_URL && env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN && env.ACCOUNT_TABLE_NAME) {
+    // Supports both API Key and IAM Roles Anywhere authentication
+    const hasApiKeyAuth = env.COMMERCIAL_BRIDGE_API_URL && env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN;
+    const hasRolesAnywhereAuth = env.COMMERCIAL_BRIDGE_API_URL &&
+      env.COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN &&
+      env.COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN &&
+      env.COMMERCIAL_BRIDGE_PROFILE_ARN &&
+      env.COMMERCIAL_BRIDGE_ROLE_ARN;
+
+    if (isGovCloud && (hasApiKeyAuth || hasRolesAnywhereAuth) && env.ACCOUNT_TABLE_NAME) {
       return new CommercialBridgeCostService({
-        apiUrl: env.COMMERCIAL_BRIDGE_API_URL,
-        apiKeySecretArn: env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN,
+        commercialBridgeEnv: env as any, // Pass full env, factory will determine auth mode
         govCloudRegions: regions.filter((r) => r.startsWith("us-gov-")),
         sandboxAccountStore: IsbServices.sandboxAccountStore(env as ServiceEnv.sandboxAccountStore),
       });

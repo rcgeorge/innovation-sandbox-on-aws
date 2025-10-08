@@ -19,6 +19,7 @@ import {
 import { GovCloudAccountCreationStepFunctionV3 } from "@amzn/innovation-sandbox-infrastructure/components/account-creation/govcloud-account-creation-step-function-v3";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import { LambdaLayers } from "@amzn/innovation-sandbox-infrastructure/components/lambda-layers";
 import { addCorsOptions } from "@amzn/innovation-sandbox-infrastructure/helpers/add-cors-options";
 import {
   getIdcRoleArn,
@@ -51,6 +52,58 @@ export class AccountsApi {
     const commercialBridgeApiUrl = Stack.of(scope).node.tryGetContext("commercialBridgeApiUrl") as string | undefined;
     const commercialBridgeApiKeySecretArn = Stack.of(scope).node.tryGetContext("commercialBridgeApiKeySecretArn") as string | undefined;
 
+    // Get IAM Roles Anywhere configuration from CDK context (optional)
+    const clientCertSecretArn = Stack.of(scope).node.tryGetContext("commercialBridgeClientCertSecretArn") as string | undefined;
+    const trustAnchorArn = Stack.of(scope).node.tryGetContext("commercialBridgeTrustAnchorArn") as string | undefined;
+    const profileArn = Stack.of(scope).node.tryGetContext("commercialBridgeProfileArn") as string | undefined;
+    const roleArn = Stack.of(scope).node.tryGetContext("commercialBridgeRoleArn") as string | undefined;
+
+    // Determine if using IAM Roles Anywhere
+    const useRolesAnywhere = !!(clientCertSecretArn && trustAnchorArn && profileArn && roleArn);
+
+    // Get Lambda layers (needed for IAM Roles Anywhere helper)
+    const lambdaLayers = LambdaLayers.get(scope);
+
+    // Build accountsLambda environment with conditional IAM Roles Anywhere support
+    const accountsLambdaEnv: Record<string, any> = {
+      APP_CONFIG_APPLICATION_ID: configApplicationId,
+      APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
+      APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
+      AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
+      ACCOUNT_TABLE_NAME: accountTable,
+      LEASE_TABLE_NAME: leaseTable,
+      ISB_NAMESPACE: props.namespace,
+      INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
+      ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
+        scope,
+        props.namespace,
+        props.orgMgtAccountId,
+      ),
+      IDC_ROLE_ARN: getIdcRoleArn(
+        scope,
+        props.namespace,
+        props.idcAccountId,
+      ),
+      ISB_EVENT_BUS: props.isbEventBus.eventBusName,
+      SANDBOX_OU_ID: sandboxOuId,
+      ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
+      IDC_ACCOUNT_ID: props.idcAccountId,
+      HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
+      COMMERCIAL_BRIDGE_API_URL: commercialBridgeApiUrl,
+    };
+
+    // Add authentication config based on mode
+    if (useRolesAnywhere) {
+      Object.assign(accountsLambdaEnv, {
+        COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN: clientCertSecretArn!,
+        COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN: trustAnchorArn!,
+        COMMERCIAL_BRIDGE_PROFILE_ARN: profileArn!,
+        COMMERCIAL_BRIDGE_ROLE_ARN: roleArn!,
+      });
+    } else if (commercialBridgeApiKeySecretArn) {
+      accountsLambdaEnv.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN = commercialBridgeApiKeySecretArn;
+    }
+
     const accountsLambdaFunction = new IsbLambdaFunction(
       scope,
       "AccountsLambdaFunction",
@@ -71,33 +124,8 @@ export class AccountsApi {
         ),
         handler: "handler",
         namespace: props.namespace,
-        environment: {
-          APP_CONFIG_APPLICATION_ID: configApplicationId,
-          APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
-          APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
-          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
-          ACCOUNT_TABLE_NAME: accountTable,
-          LEASE_TABLE_NAME: leaseTable,
-          ISB_NAMESPACE: props.namespace,
-          INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
-          ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
-            scope,
-            props.namespace,
-            props.orgMgtAccountId,
-          ),
-          IDC_ROLE_ARN: getIdcRoleArn(
-            scope,
-            props.namespace,
-            props.idcAccountId,
-          ),
-          ISB_EVENT_BUS: props.isbEventBus.eventBusName,
-          SANDBOX_OU_ID: sandboxOuId,
-          ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
-          IDC_ACCOUNT_ID: props.idcAccountId,
-          HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
-          COMMERCIAL_BRIDGE_API_URL: commercialBridgeApiUrl,
-          COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN: commercialBridgeApiKeySecretArn,
-        },
+        environment: accountsLambdaEnv,
+        layers: useRolesAnywhere ? [lambdaLayers.rolesAnywhereHelperLayer] : undefined,
         logGroup: restApi.logGroup,
         envSchema: AccountLambdaEnvironmentSchema,
         timeout: cdk.Duration.minutes(5), // Increased for account creation flow
@@ -127,8 +155,15 @@ export class AccountsApi {
       accountsLambdaFunction.lambdaFunction.role! as Role,
     );
 
-    // Grant Secrets Manager permission for commercial bridge API key (GovCloud only)
-    if (commercialBridgeApiKeySecretArn) {
+    // Grant Secrets Manager permission for commercial bridge auth (GovCloud only)
+    if (useRolesAnywhere && clientCertSecretArn) {
+      accountsLambdaFunction.lambdaFunction.addToRolePolicy(
+        new PolicyStatement({
+          actions: ["secretsmanager:GetSecretValue"],
+          resources: [clientCertSecretArn],
+        }),
+      );
+    } else if (commercialBridgeApiKeySecretArn) {
       accountsLambdaFunction.lambdaFunction.addToRolePolicy(
         new PolicyStatement({
           actions: ["secretsmanager:GetSecretValue"],
@@ -142,7 +177,23 @@ export class AccountsApi {
     // ========================================
 
     // Lambda 1: Initiate Account Creation
-    // Permissions: Secrets Manager (commercial bridge API key only)
+    // Permissions: Secrets Manager (commercial bridge API key or client cert)
+    const initiateCreationEnv: Record<string, string> = {
+      COMMERCIAL_BRIDGE_API_URL: commercialBridgeApiUrl || "",
+    };
+
+    // Add authentication config based on mode
+    if (useRolesAnywhere) {
+      Object.assign(initiateCreationEnv, {
+        COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN: clientCertSecretArn!,
+        COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN: trustAnchorArn!,
+        COMMERCIAL_BRIDGE_PROFILE_ARN: profileArn!,
+        COMMERCIAL_BRIDGE_ROLE_ARN: roleArn!,
+      });
+    } else if (commercialBridgeApiKeySecretArn) {
+      initiateCreationEnv.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN = commercialBridgeApiKeySecretArn;
+    }
+
     const initiateCreationLambda = new IsbLambdaFunction(
       scope,
       "InitiateCreationLambda",
@@ -162,17 +213,23 @@ export class AccountsApi {
         ),
         handler: "handler",
         namespace: props.namespace,
-        environment: {
-          COMMERCIAL_BRIDGE_API_URL: commercialBridgeApiUrl || "",
-          COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN: commercialBridgeApiKeySecretArn || "",
-        },
+        environment: initiateCreationEnv,
+        layers: useRolesAnywhere ? [lambdaLayers.rolesAnywhereHelperLayer] : undefined,
         logGroup: restApi.logGroup,
         envSchema: CommercialBridgeEnvironmentSchema,
         timeout: cdk.Duration.seconds(30),
       },
     );
 
-    if (commercialBridgeApiKeySecretArn) {
+    // Grant Secrets Manager permissions based on auth mode
+    if (useRolesAnywhere && clientCertSecretArn) {
+      initiateCreationLambda.lambdaFunction.addToRolePolicy(
+        new PolicyStatement({
+          actions: ["secretsmanager:GetSecretValue"],
+          resources: [clientCertSecretArn],
+        }),
+      );
+    } else if (commercialBridgeApiKeySecretArn) {
       initiateCreationLambda.lambdaFunction.addToRolePolicy(
         new PolicyStatement({
           actions: ["secretsmanager:GetSecretValue"],
@@ -182,7 +239,23 @@ export class AccountsApi {
     }
 
     // Lambda 2: Check Account Status
-    // Permissions: Secrets Manager (commercial bridge API key only)
+    // Permissions: Secrets Manager (commercial bridge API key or client cert)
+    const checkStatusEnv: Record<string, string> = {
+      COMMERCIAL_BRIDGE_API_URL: commercialBridgeApiUrl || "",
+    };
+
+    // Add authentication config based on mode
+    if (useRolesAnywhere) {
+      Object.assign(checkStatusEnv, {
+        COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN: clientCertSecretArn!,
+        COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN: trustAnchorArn!,
+        COMMERCIAL_BRIDGE_PROFILE_ARN: profileArn!,
+        COMMERCIAL_BRIDGE_ROLE_ARN: roleArn!,
+      });
+    } else if (commercialBridgeApiKeySecretArn) {
+      checkStatusEnv.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN = commercialBridgeApiKeySecretArn;
+    }
+
     const checkStatusLambda = new IsbLambdaFunction(
       scope,
       "CheckStatusLambda",
@@ -202,17 +275,23 @@ export class AccountsApi {
         ),
         handler: "handler",
         namespace: props.namespace,
-        environment: {
-          COMMERCIAL_BRIDGE_API_URL: commercialBridgeApiUrl || "",
-          COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN: commercialBridgeApiKeySecretArn || "",
-        },
+        environment: checkStatusEnv,
+        layers: useRolesAnywhere ? [lambdaLayers.rolesAnywhereHelperLayer] : undefined,
         logGroup: restApi.logGroup,
         envSchema: CommercialBridgeEnvironmentSchema,
         timeout: cdk.Duration.seconds(30),
       },
     );
 
-    if (commercialBridgeApiKeySecretArn) {
+    // Grant Secrets Manager permissions based on auth mode
+    if (useRolesAnywhere && clientCertSecretArn) {
+      checkStatusLambda.lambdaFunction.addToRolePolicy(
+        new PolicyStatement({
+          actions: ["secretsmanager:GetSecretValue"],
+          resources: [clientCertSecretArn],
+        }),
+      );
+    } else if (commercialBridgeApiKeySecretArn) {
       checkStatusLambda.lambdaFunction.addToRolePolicy(
         new PolicyStatement({
           actions: ["secretsmanager:GetSecretValue"],
