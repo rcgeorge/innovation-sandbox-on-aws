@@ -7,11 +7,26 @@
 
 FROM public.ecr.aws/nginx/nginx:alpine-slim
 
+# Create non-root user for running NGINX
+RUN addgroup -g 101 -S nginx || true && \
+    adduser -S -D -H -u 101 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx || true
+
 # Copy pre-built assets to NGINX serving directory
 COPY dist /usr/share/nginx/html
 
 # Copy custom NGINX configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Create necessary directories and set permissions for non-root user
+RUN touch /var/run/nginx.pid && \
+    chown -R nginx:nginx /var/run/nginx.pid && \
+    chown -R nginx:nginx /var/cache/nginx && \
+    chown -R nginx:nginx /var/log/nginx && \
+    chown -R nginx:nginx /etc/nginx/conf.d && \
+    chown -R nginx:nginx /usr/share/nginx/html
+
+# Switch to non-root user
+USER nginx
 
 # Expose port 80
 EXPOSE 80
