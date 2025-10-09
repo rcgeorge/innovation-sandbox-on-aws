@@ -113,8 +113,16 @@ export class IsbContainerStack extends Stack {
     const cluster = new ecs.Cluster(this, "Cluster", {
       vpc: vpc,
       clusterName: `${namespaceParam.namespace.valueAsString}-cluster`,
-      containerInsights: true,
     });
+
+    // Enable Container Insights (avoiding deprecated containerInsights property)
+    const cfnCluster = cluster.node.defaultChild as ecs.CfnCluster;
+    cfnCluster.addPropertyOverride('ClusterSettings', [
+      {
+        Name: 'containerInsights',
+        Value: 'enabled',
+      },
+    ]);
 
     // Conditionally create frontend based on whether ECR repo is provided
     const deployFrontendCondition = new CfnCondition(this, "DeployFrontendCondition", {

@@ -1,0 +1,47 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# AWS CodeBuild buildspec for Innovation Sandbox frontend container
+# This buildspec builds the Vite React application and creates a Docker image
+# without requiring Docker to be installed locally.
+
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - echo "Installing dependencies..."
+      - npm ci
+
+  pre_build:
+    commands:
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - echo "Logged in to ECR registry $ECR_REGISTRY"
+
+  build:
+    commands:
+      - echo "Building frontend application..."
+      - npm run build
+      - echo "Frontend build completed, dist/ folder created"
+      - echo "Building Docker image..."
+      - echo "Image will be tagged as $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG"
+      - docker build --platform linux/amd64 -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - echo "Docker build completed successfully"
+
+  post_build:
+    commands:
+      - echo "Pushing image to ECR..."
+      - docker push $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - echo "Image pushed successfully to $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG"
+      - echo "Build completed on $(date)"
+
+artifacts:
+  files: []
+
+cache:
+  paths:
+    - 'node_modules/**/*'
