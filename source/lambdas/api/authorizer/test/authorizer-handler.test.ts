@@ -4,6 +4,10 @@ import {
   AppConfigDataClient,
   GetLatestConfigurationCommand,
 } from "@aws-sdk/client-appconfigdata";
+import {
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from "@aws-sdk/client-secrets-manager";
 import { Uint8ArrayBlobAdapter } from "@smithy/util-stream";
 import { mockClient } from "aws-sdk-client-mock";
 import {
@@ -53,6 +57,12 @@ beforeAll(async () => {
 beforeEach(() => {
   bulkStubEnv(testEnv);
   mockAppConfigMiddleware(mockedGlobalConfig);
+
+  // Mock Secrets Manager to return test JWT secret
+  const secretsManagerMock = mockClient(SecretsManagerClient);
+  secretsManagerMock.on(GetSecretValueCommand).resolves({
+    SecretString: "testSecret",
+  });
 });
 
 afterEach(() => {

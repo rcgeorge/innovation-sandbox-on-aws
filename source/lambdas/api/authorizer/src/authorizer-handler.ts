@@ -23,8 +23,9 @@ import {
   ContextWithConfig,
   isbConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
+import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
 import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
-import { decodeJwt } from "@amzn/innovation-sandbox-commons/utils/jwt.js";
+import { verifyJwt } from "@amzn/innovation-sandbox-commons/utils/jwt.js";
 
 const tracer = new Tracer();
 const logger = new Logger();
@@ -57,12 +58,24 @@ async function lambdaHandler(
       return generatePolicy("user", "Deny", event.methodArn);
     }
     const jwtToken = parts[1]!;
-    const decoded = decodeJwt(jwtToken);
-    if (!decoded) {
-      logger.info("Invalid JWT - rejected authorization", { token: jwtToken });
+
+    // Get JWT secret from Secrets Manager for signature verification
+    const secretsManagerHelper = IsbClients.secretsManager(context.env);
+    const jwtSecret = await secretsManagerHelper.getStringSecret(
+      context.env.JWT_SECRET_NAME,
+    );
+
+    // Verify JWT signature BEFORE any authorization checks
+    const verified = await verifyJwt(jwtSecret, jwtToken);
+    if (!verified.verified) {
+      logger.info("Invalid JWT signature - rejected authorization");
       return generatePolicy("user", "Deny", event.methodArn);
     }
-    const user = decoded as IsbUser;
+
+    // Now safe to use verified user data
+    const user = verified.session.user as IsbUser;
+
+    // Check maintenance mode with verified user
     if (context.globalConfig.maintenanceMode) {
       if (!isAllowedInMaintenanceMode(event, user)) {
         logger.info(
@@ -71,6 +84,8 @@ async function lambdaHandler(
         return generatePolicy("user", "Deny", event.methodArn);
       }
     }
+
+    // Perform additional authorization checks
     const authorized = await isAuthorized(
       { methodArn: event.methodArn, authorizationToken: jwtToken },
       {
