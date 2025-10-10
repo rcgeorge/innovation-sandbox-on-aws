@@ -10,14 +10,23 @@
     "cdk:destroy": "cd infrastructure && cdk destroy --all",
     "cdk:synth": "cd infrastructure && cdk synth",
     "roles-anywhere:generate-ca": "bash scripts/generate-ca-cert.sh || powershell -ExecutionPolicy Bypass -File scripts/generate-ca-cert.ps1",
-    "roles-anywhere:generate-client-cert": "bash scripts/generate-client-cert.sh || powershell -ExecutionPolicy Bypass -File scripts/generate-client-cert.ps1"
+    "roles-anywhere:generate-client-cert": "bash scripts/generate-client-cert.sh || powershell -ExecutionPolicy Bypass -File scripts/generate-client-cert.ps1",
+    "pca:issue-client-cert": "tsx scripts/issue-client-cert-from-pca.ts",
+    "pca:issue-and-update-secret": "tsx scripts/issue-client-cert-from-pca.ts govcloud-commercial-bridge --update-secret"
   },
   "workspaces": [
     "infrastructure",
     "lambdas/*"
   ],
   "devDependencies": {
+    "@aws-sdk/client-acm-pca": "^3.901.0",
+    "@aws-sdk/client-cloudformation": "^3.901.0",
+    "@aws-sdk/client-secrets-manager": "^3.901.0",
     "@types/node": "^22.0.0",
+    "tsx": "^4.19.4",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@aws-sdk/credential-providers": "^3.907.0"
   }
 }

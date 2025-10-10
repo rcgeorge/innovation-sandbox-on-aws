@@ -86,6 +86,7 @@ export class RolesAnywhereStack extends cdk.Stack {
     // 1. Create Trust Anchor (conditional based on CA type)
     this.trustAnchor = new rolesanywhere.CfnTrustAnchor(this, 'TrustAnchor', {
       name: 'CommercialBridge-TrustAnchor',
+      enabled: true, // Enable trust anchor on creation
       source: props.caType === 'SELF_SIGNED'
         ? {
             // Self-signed: Provide external certificate bundle
@@ -147,6 +148,7 @@ export class RolesAnywhereStack extends cdk.Stack {
     // 3. Create IAM Roles Anywhere Profile
     this.profile = new rolesanywhere.CfnProfile(this, 'Profile', {
       name: 'CommercialBridge-Profile',
+      enabled: true, // Enable profile on creation
       roleArns: [this.role.roleArn],
       durationSeconds: 3600, // 1 hour (min: 900, max: 43200)
     });

@@ -633,8 +633,16 @@ async function getAvailableGovCloudAccountsHandler(
   event: IsbApiEvent,
   context: AccountsApiContext,
 ): Promise<APIGatewayProxyResult> {
-  // Check if commercial bridge is configured
-  if (!context.env.COMMERCIAL_BRIDGE_API_URL || !context.env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN) {
+  // Check if commercial bridge is configured (needs URL and either API key or Roles Anywhere)
+  const hasApiKey = !!context.env.COMMERCIAL_BRIDGE_API_KEY_SECRET_ARN;
+  const hasRolesAnywhere = !!(
+    context.env.COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN &&
+    context.env.COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN &&
+    context.env.COMMERCIAL_BRIDGE_PROFILE_ARN &&
+    context.env.COMMERCIAL_BRIDGE_ROLE_ARN
+  );
+
+  if (!context.env.COMMERCIAL_BRIDGE_API_URL || (!hasApiKey && !hasRolesAnywhere)) {
     throw createHttpJSendError({
       statusCode: 501,
       data: {

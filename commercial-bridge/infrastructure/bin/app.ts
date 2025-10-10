@@ -10,6 +10,7 @@ import * as path from 'path';
 import { CostInfoLambdaStack, CreateGovCloudAccountLambdaStack, AcceptInvitationLambdaStack } from '../lib/lambda-stacks';
 import { ApiGatewayStack } from '../lib/api-gateway-stack';
 import { RolesAnywhereStack, CaType } from '../lib/roles-anywhere-stack';
+import { PcaStack } from '../lib/pca-stack';
 
 const app = new cdk.App();
 
@@ -19,10 +20,15 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
 };
 
+// PCA configuration (optional)
+const enablePca = process.env.ENABLE_PCA === 'true';
+const pcaCommonName = process.env.PCA_CA_COMMON_NAME || 'Commercial Bridge Root CA';
+const pcaOrganization = process.env.PCA_CA_ORGANIZATION || 'Innovation Sandbox';
+const pcaValidityDays = parseInt(process.env.PCA_CA_VALIDITY_DAYS || '3650');
+
 // IAM Roles Anywhere configuration (optional)
 const enableRolesAnywhere = process.env.ENABLE_ROLES_ANYWHERE === 'true';
 const caType = (process.env.ROLES_ANYWHERE_CA_TYPE as CaType) || 'SELF_SIGNED';
-const pcaArn = process.env.ROLES_ANYWHERE_PCA_ARN;
 const allowedCN = process.env.ROLES_ANYWHERE_ALLOWED_CN || 'govcloud-commercial-bridge';
 
 // Create Lambda stacks
@@ -42,16 +48,47 @@ apiStack.addDependency(costInfoStack);
 apiStack.addDependency(createGovCloudAccountStack);
 apiStack.addDependency(acceptInvitationStack);
 
+// Optionally create PCA for certificate management
+let pcaStack: PcaStack | undefined;
+if (enablePca) {
+  pcaStack = new PcaStack(app, 'PcaStack', {
+    env,
+    caCommonName: pcaCommonName,
+    caOrganization: pcaOrganization,
+    caValidityDays: pcaValidityDays,
+    enableCrl: true,
+  });
+
+  console.log('⚠️  PCA Stack enabled - This will incur ~$400/month costs');
+  console.log('   After deployment, run: npm run commercial:pca:issue-client-cert');
+}
+
 // Optionally create IAM Roles Anywhere stack for certificate-based auth
 if (enableRolesAnywhere) {
-  // Load CA certificate for self-signed mode
+  // Determine PCA ARN based on whether PCA stack is deployed
+  let pcaArn: string | undefined;
   let caCertificatePem: string | undefined;
-  if (caType === 'SELF_SIGNED') {
+
+  if (caType === 'PCA') {
+    if (pcaStack) {
+      // Use PCA from our PCA stack
+      pcaArn = pcaStack.ca.attrArn;
+    } else if (process.env.ROLES_ANYWHERE_PCA_ARN) {
+      // Use externally provided PCA ARN
+      pcaArn = process.env.ROLES_ANYWHERE_PCA_ARN;
+    } else {
+      throw new Error(
+        'ROLES_ANYWHERE_CA_TYPE is PCA but no PCA found. ' +
+          'Either set ENABLE_PCA=true or provide ROLES_ANYWHERE_PCA_ARN',
+      );
+    }
+  } else {
+    // Self-signed mode - load CA certificate from file
     const caCertPath = path.join(__dirname, '../../certs/ca.pem');
     if (!fs.existsSync(caCertPath)) {
       throw new Error(
         `CA certificate not found at ${caCertPath}. ` +
-        'Run "npm run roles-anywhere:generate-ca" to generate it.'
+          'Run "npm run roles-anywhere:generate-ca" to generate it.',
       );
     }
     caCertificatePem = fs.readFileSync(caCertPath, 'utf-8');
@@ -67,6 +104,10 @@ if (enableRolesAnywhere) {
   });
 
   rolesAnywhereStack.addDependency(apiStack);
+
+  if (pcaStack) {
+    rolesAnywhereStack.addDependency(pcaStack);
+  }
 }
 
 app.synth();

@@ -79,7 +79,8 @@ export class ApiGatewayStack extends cdk.Stack {
         proxy: true,
       }),
       {
-        apiKeyRequired: true,
+        authorizationType: apigateway.AuthorizationType.IAM,
+        apiKeyRequired: false, // Allow IAM auth without API key
       }
     );
 
@@ -87,13 +88,15 @@ export class ApiGatewayStack extends cdk.Stack {
     const govCloudAccountsResource = this.api.root.addResource('govcloud-accounts');
 
     // GET method for listing all GovCloud accounts
+    // Supports both API Key and AWS_IAM (Roles Anywhere) authentication
     govCloudAccountsResource.addMethod(
       'GET',
       new apigateway.LambdaIntegration(props.createGovCloudAccountLambda, {
         proxy: true,
       }),
       {
-        apiKeyRequired: true,
+        authorizationType: apigateway.AuthorizationType.IAM,
+        apiKeyRequired: false, // Allow IAM auth without API key
       }
     );
 
@@ -104,7 +107,8 @@ export class ApiGatewayStack extends cdk.Stack {
         proxy: true,
       }),
       {
-        apiKeyRequired: true,
+        authorizationType: apigateway.AuthorizationType.IAM,
+        apiKeyRequired: false, // Allow IAM auth without API key
       }
     );
 
@@ -117,7 +121,8 @@ export class ApiGatewayStack extends cdk.Stack {
         proxy: true,
       }),
       {
-        apiKeyRequired: true,
+        authorizationType: apigateway.AuthorizationType.IAM,
+        apiKeyRequired: false, // Allow IAM auth without API key
       }
     );
 
@@ -130,7 +135,8 @@ export class ApiGatewayStack extends cdk.Stack {
         proxy: true,
       }),
       {
-        apiKeyRequired: true,
+        authorizationType: apigateway.AuthorizationType.IAM,
+        apiKeyRequired: false, // Allow IAM auth without API key
       }
     );
 
