@@ -84,7 +84,32 @@ commandString = commandString.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (match, var
   return varName in process.env ? (process.env[varName] || '') : match;
 });
 
+// Security validation: Check for suspicious patterns that might indicate command injection
+// Note: This script is designed to run trusted commands from package.json npm scripts
+// Environment variables come from .env file which should be secured
+const suspiciousPatterns = [
+  /;\s*rm\s+-rf\s+\/[^a-zA-Z]/,  // Dangerous rm -rf / commands
+  /;\s*curl.*\|\s*sh/,            // Pipe to shell from network
+  /;\s*wget.*\|\s*sh/,            // Pipe to shell from network
+  /&\s*rm\s+-rf\s+\/[^a-zA-Z]/,  // Background dangerous rm
+];
+
+for (const pattern of suspiciousPatterns) {
+  if (pattern.test(commandString)) {
+    console.error('Error: Command contains potentially dangerous patterns');
+    console.error(`Command: ${commandString}`);
+    process.exit(1);
+  }
+}
+
 // Execute command with environment variables using shell
+// semgrep: ignore spawn-shell-true
+// JUSTIFICATION: shell: true is required for this script's functionality:
+// - Commands include shell operators (&&, ||, |, >, etc.) from npm scripts
+// - Environment variable expansion is needed ($VAR syntax)
+// - Commands come from trusted package.json npm scripts
+// - Basic validation above checks for obviously dangerous patterns
+// - .env file should be secured and not user-modifiable in production
 const child = spawn(commandString, {
   stdio: 'inherit',
   shell: true,

@@ -33,7 +33,7 @@ page.
   - [Cost Scaling](#cost-scaling)
   - [File Structure](#file-structure)
   - [Pre-Commit](#pre-commit)
-  - [Secret Scanning Configuration](#secret-scanning-configuration)
+  - [Security Considerations](#security-considerations)
   - [Collection of Operational Metrics](#collection-of-operational-metrics)
   - [License](#license)
   - [Contact Information](#contact-information)
@@ -136,6 +136,18 @@ Use the interactive wizard to be prompted for all required values:
 ```shell
 npm run configure
 ```
+
+**For GovCloud or non-default profiles**, specify the AWS profile to use for auto-detection:
+
+```shell
+# Use a specific AWS profile for GovCloud account detection
+npm run configure -- --profile govcloud
+
+# Use a specific AWS profile for commercial account detection
+npm run configure -- --profile my-aws-profile
+```
+
+The wizard will use the specified profile to auto-detect your AWS environment (account ID, region, IAM Identity Center, etc.).
 
 The wizard will:
 - **Auto-detect** your AWS environment:
@@ -651,19 +663,24 @@ To deploy optional stacks, configure them in `.env` **before** running `npm run 
 1. Add to your `.env` file:
    ```shell
    ENABLE_ROLES_ANYWHERE="true"
+   ROLES_ANYWHERE_CA_TYPE="SELF_SIGNED"  # Or "PCA" if using PCA
    ```
 
-2. If using self-signed certificates (free), generate CA first:
+2. **If using self-signed certificates (free)**, generate CA first:
    ```shell
    cd commercial-bridge
    npm run roles-anywhere:generate-ca
    ```
    This creates `certs/ca.pem` and `certs/ca.key`.
 
+   **Skip this step if using PCA** - the CA type will automatically use the PCA stack.
+
 3. Deploy (includes RolesAnywhere stack):
    ```shell
    npm run commercial:deploy
    ```
+
+   **Note:** The configuration wizard automatically generates the self-signed CA if needed.
 
 **Option C: Both PCA and Roles Anywhere (Recommended for Production)**
 
@@ -674,6 +691,7 @@ This option combines automated certificate management (PCA) with secure certific
    # Commercial Bridge PCA configuration
    ENABLE_PCA="true"
    ENABLE_ROLES_ANYWHERE="true"
+   ROLES_ANYWHERE_CA_TYPE="PCA"  # Use PCA for certificate authority
    PCA_CA_COMMON_NAME="Commercial Bridge Root CA"  # Optional
    PCA_CA_ORGANIZATION="Innovation Sandbox"        # Optional
 
@@ -789,6 +807,7 @@ AWS_COMMERCIAL_PROFILE="commercial"
 AWS_GOVCLOUD_PROFILE="govcloud"
 ENABLE_PCA="true"
 ENABLE_ROLES_ANYWHERE="true"
+ROLES_ANYWHERE_CA_TYPE="PCA"  # Use PCA for certificates
 GOVCLOUD_REGION="us-gov-east-1"
 GOVCLOUD_SECRET_NAME="/InnovationSandbox/CommercialBridge/ClientCert"
 EOF
@@ -942,7 +961,9 @@ pre-commit run --all-files
 
 For more information on pre-commit, refer to the official documentation [here](https://pre-commit.com/).
 
-## Secret Scanning Configuration
+## Security Considerations
+
+### Secret Scanning Configuration
 
 The repository includes configuration files to prevent false positives from secret scanning tools:
 
@@ -961,6 +982,34 @@ The repository includes configuration files to prevent false positives from secr
 - Inline ignore comments: `// gitleaks:allow` for specific lines
 
 If your organization uses a different secret scanner, you may need to add similar configuration or ignore patterns.
+
+### Command Injection Prevention
+
+The repository includes validation to prevent command injection vulnerabilities:
+
+**`scripts/run-with-env.cjs`:**
+- Uses `shell: true` (required for npm scripts with shell operators like `&&`, `||`, pipes)
+- Includes validation for dangerous command patterns (rm -rf /, curl | sh, etc.)
+- Commands originate from trusted `package.json` npm scripts, not user input
+- Environment variables from `.env` should be treated as trusted deployment configuration
+
+**`commercial-bridge/scripts/issue-client-cert-from-pca.ts`:**
+- Sanitizes `commonName` input to prevent injection in OpenSSL commands
+- Only allows alphanumeric characters, hyphens, underscores, and dots
+- Validates length constraints (1-64 characters)
+
+**`source/infrastructure/lib/components/lambda-layers.ts`:**
+- Validates directory paths to ensure no shell metacharacters
+- Paths come from hardcoded `__dirname` + relative paths (build-time only)
+- Defense-in-depth validation even though paths are not user-controlled
+
+### .env File Security
+
+The `.env` file contains deployment configuration and should be secured:
+- **Never commit** `.env` to version control (use `.env.example` as template)
+- Restrict file permissions: `chmod 600 .env` on Unix systems
+- Treat as sensitive: Contains account IDs, regions, and deployment settings
+- In CI/CD: Use encrypted secrets or parameter stores instead of .env files
 
 ## Collection of Operational Metrics
 

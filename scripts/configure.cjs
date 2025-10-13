@@ -5,12 +5,38 @@
 /**
  * Interactive configuration wizard for Innovation Sandbox on AWS
  * This script prompts users for required environment variables and creates a .env file
+ *
+ * Usage:
+ *   npm run configure
+ *   npm run configure -- --profile my-govcloud-profile
  */
 
 const inquirer = require('inquirer');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+
+// Parse command-line arguments for --profile
+const args = process.argv.slice(2);
+const profileArgIndex = args.findIndex(arg => arg.startsWith('--profile'));
+let configuredProfile = null;
+
+if (profileArgIndex !== -1) {
+  const profileArg = args[profileArgIndex];
+  if (profileArg.includes('=')) {
+    configuredProfile = profileArg.split('=')[1];
+  } else if (args[profileArgIndex + 1] && !args[profileArgIndex + 1].startsWith('--')) {
+    configuredProfile = args[profileArgIndex + 1];
+  } else {
+    console.error('Error: --profile requires a value');
+    console.error('Usage: npm run configure -- --profile <profile-name>');
+    process.exit(1);
+  }
+
+  // Set AWS_PROFILE for this session
+  process.env.AWS_PROFILE = configuredProfile;
+  console.log(`Using AWS profile: ${configuredProfile}\n`);
+}
 
 // AWS SDK v3 imports
 const { STSClient, GetCallerIdentityCommand } = require('@aws-sdk/client-sts');
@@ -369,26 +395,47 @@ async function deployStacks(answers, isGovCloud, currentRegion) {
           console.log('\n📦 Installing commercial bridge dependencies...');
           execSync('npm run commercial:install', { stdio: 'inherit' });
 
+          // If Roles Anywhere is enabled with self-signed CA, generate the CA certificate first
+          const usePCA = answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'PCA';
+          if (answers.ENABLE_ROLES_ANYWHERE && !usePCA) {
+            const caCertPath = path.join(__dirname, '..', 'commercial-bridge', 'certs', 'ca.pem');
+            if (!fs.existsSync(caCertPath)) {
+              console.log('\n🔐 Generating self-signed CA certificate for Roles Anywhere...');
+              try {
+                execSync('cd commercial-bridge && npm run roles-anywhere:generate-ca', { stdio: 'inherit' });
+                console.log('✅ CA certificate generated');
+              } catch (error) {
+                console.error('❌ Failed to generate CA certificate');
+                console.error('   Roles Anywhere requires a CA certificate.');
+                console.error('   Either generate it manually or enable PCA instead.');
+                throw error;
+              }
+            } else {
+              console.log('✓ Self-signed CA certificate already exists');
+            }
+          }
+
           console.log('\n🔧 Bootstrapping CDK in commercial account...');
           execSync('npm run commercial:bootstrap', { stdio: 'inherit' });
 
           console.log('\n🚀 Deploying commercial bridge stacks...');
+          if (usePCA) {
+            console.log('   ⚠️  PCA enabled - This will cost ~$400/month');
+          }
           execSync('npm run commercial:deploy', { stdio: 'inherit' });
 
-          // If PCA is enabled, issue certificates
-          if (answers.ENABLE_COMMERCIAL_BRIDGE_PCA) {
-            const { issueCerts } = await inquirer.prompt([
-              {
-                type: 'confirm',
-                name: 'issueCerts',
-                message: 'PCA stack detected. Issue client certificates now?',
-                default: true
-              }
-            ]);
+          // If PCA is enabled, issue certificates automatically
+          if (usePCA) {
+            console.log('\n🔐 Issuing client certificates from PCA...');
+            console.log('   This will generate certificates and store them in GovCloud Secrets Manager');
 
-            if (issueCerts) {
-              console.log('\n🔐 Issuing client certificates from PCA...');
+            try {
               execSync('npm run commercial:pca:issue-and-update-secret', { stdio: 'inherit' });
+              console.log('\n✅ Client certificates issued and stored in GovCloud!');
+            } catch (error) {
+              console.error('\n❌ Failed to issue certificates from PCA');
+              console.error('   You can manually run: npm run commercial:pca:issue-and-update-secret');
+              console.error(`   Error: ${error.message}`);
             }
           }
 
@@ -1219,31 +1266,46 @@ async function main() {
   },
   {
     type: 'confirm',
-    name: 'ENABLE_COMMERCIAL_BRIDGE_PCA',
-    message: 'Enable AWS Private CA for Commercial Bridge certificates? (~$400/month, provides automated cert management)',
+    name: 'ENABLE_ROLES_ANYWHERE',
+    message: 'Enable IAM Roles Anywhere for certificate-based authentication? (Recommended for GovCloud)',
     when: () => isGovCloud,
-    default: !!(existingEnv.ENABLE_PCA === 'true')
+    default: !!(existingEnv.ENABLE_ROLES_ANYWHERE === 'true')
+  },
+  {
+    type: 'list',
+    name: 'ROLES_ANYWHERE_CA_TYPE_CHOICE',
+    message: 'Which Certificate Authority do you want to use for Roles Anywhere?',
+    when: (answers) => answers.ENABLE_ROLES_ANYWHERE,
+    choices: [
+      {
+        name: 'AWS Private CA - Automated cert management (~$400/month) [RECOMMENDED]',
+        value: 'PCA'
+      },
+      {
+        name: 'Self-Signed CA - Manual cert management (free)',
+        value: 'SELF_SIGNED'
+      }
+    ],
+    default: () => {
+      // Default to PCA for new configurations
+      if (existingEnv.ENABLE_PCA === 'true') return 'PCA';
+      if (existingEnv.ROLES_ANYWHERE_CA_TYPE === 'SELF_SIGNED') return 'SELF_SIGNED';
+      return 'PCA'; // Default to PCA (recommended)
+    }
   },
   {
     type: 'input',
     name: 'PCA_CA_COMMON_NAME',
     message: 'PCA Root Certificate Common Name:',
-    when: (answers) => answers.ENABLE_COMMERCIAL_BRIDGE_PCA,
+    when: (answers) => answers.ENABLE_ROLES_ANYWHERE && answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'PCA',
     default: existingEnv.PCA_CA_COMMON_NAME || 'Commercial Bridge Root CA'
   },
   {
     type: 'input',
     name: 'PCA_CA_ORGANIZATION',
     message: 'PCA Certificate Organization:',
-    when: (answers) => answers.ENABLE_COMMERCIAL_BRIDGE_PCA,
+    when: (answers) => answers.ENABLE_ROLES_ANYWHERE && answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'PCA',
     default: existingEnv.PCA_CA_ORGANIZATION || 'Innovation Sandbox'
-  },
-  {
-    type: 'confirm',
-    name: 'ENABLE_ROLES_ANYWHERE',
-    message: 'Enable IAM Roles Anywhere for certificate-based authentication?',
-    when: () => isGovCloud,
-    default: !!(existingEnv.ENABLE_ROLES_ANYWHERE === 'true')
   },
   {
     type: 'confirm',
@@ -1469,8 +1531,25 @@ async function main() {
     }
 
     // Handle Commercial Bridge configuration (GovCloud only)
-    if (isGovCloud) {
-      if (answers.ENABLE_COMMERCIAL_BRIDGE_PCA) {
+    if (isGovCloud && answers.ENABLE_ROLES_ANYWHERE) {
+      const usePCA = answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'PCA';
+
+      // Enable Roles Anywhere
+      envContent = envContent.replace(/^# ENABLE_ROLES_ANYWHERE=.*/m, `ENABLE_ROLES_ANYWHERE="true"`);
+
+      // Set CA type
+      const caType = answers.ROLES_ANYWHERE_CA_TYPE_CHOICE;
+      if (!envContent.includes('ROLES_ANYWHERE_CA_TYPE=')) {
+        envContent = envContent.replace(
+          /^# ENABLE_ROLES_ANYWHERE=.*/m,
+          `ENABLE_ROLES_ANYWHERE="true"\n# ROLES_ANYWHERE_CA_TYPE="${caType}" # CA type for Roles Anywhere (SELF_SIGNED or PCA)`
+        );
+      } else {
+        envContent = envContent.replace(/^# ROLES_ANYWHERE_CA_TYPE=.*/m, `ROLES_ANYWHERE_CA_TYPE="${caType}"`);
+      }
+
+      // If using PCA, enable PCA stack and set configuration
+      if (usePCA) {
         envContent = envContent.replace(/^# ENABLE_PCA=.*/m, `ENABLE_PCA="true"`);
         if (answers.PCA_CA_COMMON_NAME) {
           envContent = envContent.replace(/^# PCA_CA_COMMON_NAME=.*/m, `PCA_CA_COMMON_NAME="${answers.PCA_CA_COMMON_NAME}"`);
@@ -1478,9 +1557,6 @@ async function main() {
         if (answers.PCA_CA_ORGANIZATION) {
           envContent = envContent.replace(/^# PCA_CA_ORGANIZATION=.*/m, `PCA_CA_ORGANIZATION="${answers.PCA_CA_ORGANIZATION}"`);
         }
-      }
-      if (answers.ENABLE_ROLES_ANYWHERE) {
-        envContent = envContent.replace(/^# ENABLE_ROLES_ANYWHERE=.*/m, `ENABLE_ROLES_ANYWHERE="true"`);
       }
     }
 
@@ -1611,8 +1687,11 @@ async function main() {
         console.log('  3. Deploy Commercial Bridge (in commercial account):');
         console.log('     - npm run commercial:install');
         console.log('     - npm run commercial:bootstrap');
+        if (answers.ENABLE_ROLES_ANYWHERE && answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'SELF_SIGNED') {
+          console.log('     - cd commercial-bridge && npm run roles-anywhere:generate-ca');
+        }
         console.log('     - npm run commercial:deploy');
-        if (answers.ENABLE_COMMERCIAL_BRIDGE_PCA) {
+        if (answers.ENABLE_ROLES_ANYWHERE && answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'PCA') {
           console.log('     - npm run commercial:pca:issue-and-update-secret');
         }
       }
