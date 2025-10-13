@@ -148,7 +148,9 @@ function getAwsConfig(region) {
 // Function to get current AWS account ID using AWS SDK
 async function getCurrentAwsAccountId() {
   try {
-    const client = new STSClient(getAwsConfig());
+    const awsConfig = getAwsConfig();
+    console.log(`[DEBUG] STS config:`, awsConfig.region ? `region=${awsConfig.region}` : 'no region', process.env.AWS_PROFILE ? `profile=${process.env.AWS_PROFILE}` : 'no profile');
+    const client = new STSClient(awsConfig);
     const command = new GetCallerIdentityCommand({});
     const response = await client.send(command);
 
@@ -156,6 +158,7 @@ async function getCurrentAwsAccountId() {
       return response.Account;
     }
   } catch (error) {
+    console.log(`[DEBUG] STS error:`, error.message);
     // Silently fail and try environment variable
   }
 
