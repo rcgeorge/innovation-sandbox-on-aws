@@ -140,12 +140,17 @@ npm run configure
 **For GovCloud or non-default profiles**, specify the AWS profile to use for auto-detection:
 
 ```shell
-# Use a specific AWS profile for GovCloud account detection
+# IMPORTANT: Use double dash (--) before --profile to pass it to the script
 npm run configure -- --profile govcloud
 
-# Use a specific AWS profile for commercial account detection
-npm run configure -- --profile my-aws-profile
+# Alternative: Just pass the profile name directly
+npm run configure govcloud
+
+# With equals syntax
+npm run configure -- --profile=my-aws-profile
 ```
+
+**Common mistake:** Running `npm run configure --profile govcloud` (single dash) won't work because npm interprets the flag itself. Always use `npm run configure -- --profile govcloud` or `npm run configure govcloud`.
 
 The wizard will use the specified profile to auto-detect your AWS environment (account ID, region, IAM Identity Center, etc.).
 
@@ -195,10 +200,20 @@ For the fastest path to deployment:
 
 1. **Configure AWS credentials**: Set up AWS CLI profiles (if multi-account or GovCloud)
    ```shell
-   aws configure --profile your-profile-name
+   aws configure --profile govcloud
+   aws configure --profile commercial  # For GovCloud deployments only
    ```
 2. **Install dependencies**: `npm install`
-3. **Run configuration wizard**: `npm run configure`
+3. **Run configuration wizard**:
+   ```shell
+   # For default AWS credentials
+   npm run configure
+
+   # For GovCloud or specific profile (use double dash --)
+   npm run configure -- --profile govcloud
+   # Or simply
+   npm run configure govcloud
+   ```
    - Auto-detects your AWS environment
    - Guides you through all required settings
    - **Optionally deploys all stacks in correct order** (including Commercial Bridge for GovCloud)

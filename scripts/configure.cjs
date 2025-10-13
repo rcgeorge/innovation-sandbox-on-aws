@@ -36,6 +36,12 @@ if (profileArgIndex !== -1) {
   // Set AWS_PROFILE for this session
   process.env.AWS_PROFILE = configuredProfile;
   console.log(`Using AWS profile: ${configuredProfile}\n`);
+} else if (args.length === 1 && !args[0].startsWith('-')) {
+  // Fallback: If just a single argument without dashes, treat it as profile name
+  // This handles: npm run configure govcloud (without --)
+  configuredProfile = args[0];
+  process.env.AWS_PROFILE = configuredProfile;
+  console.log(`Using AWS profile: ${configuredProfile}\n`);
 }
 
 // AWS SDK v3 imports
@@ -281,10 +287,24 @@ async function getComputeStackOutputs(namespace) {
   return { restApiUrl: null };
 }
 
+// Helper function to get AWS credentials configuration
+function getAwsConfig(region) {
+  const config = { region };
+
+  // Use configured profile if available (set via --profile argument)
+  if (process.env.AWS_PROFILE) {
+    const { fromIni } = require('@aws-sdk/credential-providers');
+    config.credentials = fromIni({ profile: process.env.AWS_PROFILE });
+  }
+  // Otherwise, use default credential chain (env vars, default profile, instance role, etc.)
+
+  return config;
+}
+
 // Helper function to check if ECR repository exists using AWS SDK
 async function ecrRepositoryExists(repositoryName, region) {
   try {
-    const client = new ECRClient({ region });
+    const client = new ECRClient(getAwsConfig(region));
     const command = new DescribeRepositoriesCommand({ repositoryNames: [repositoryName] });
     await client.send(command);
     return true;
@@ -296,7 +316,7 @@ async function ecrRepositoryExists(repositoryName, region) {
 // Helper function to create ECR repository using AWS SDK
 async function createEcrRepository(repositoryName, region) {
   try {
-    const client = new ECRClient({ region });
+    const client = new ECRClient(getAwsConfig(region));
     const command = new CreateRepositoryCommand({
       repositoryName,
       imageScanningConfiguration: { scanOnPush: true }
@@ -311,7 +331,7 @@ async function createEcrRepository(repositoryName, region) {
 // Helper function to check if ECR image exists using AWS SDK
 async function ecrImageExists(repositoryName, region, imageTag = 'latest') {
   try {
-    const client = new ECRClient({ region });
+    const client = new ECRClient(getAwsConfig(region));
     const command = new DescribeImagesCommand({
       repositoryName,
       imageIds: [{ imageTag }]
