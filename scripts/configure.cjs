@@ -1732,7 +1732,37 @@ async function main() {
           console.log('\n✓ Docker image built and pushed successfully');
         } catch (dockerError) {
           if (dockerError.message.includes('docker info')) {
-            console.error('\n❌ Docker is not running. Please start Docker and run: npm run docker:build-and-push');
+            console.log('\n⚠️  Docker is not running or not installed.\n');
+
+            const { useCodeBuild } = await inquirer.prompt([
+              {
+                type: 'confirm',
+                name: 'useCodeBuild',
+                message: 'Use AWS CodeBuild to build and push the image instead? (No Docker required)',
+                default: true
+              }
+            ]);
+
+            if (useCodeBuild) {
+              try {
+                console.log('\n🔨 Deploying CodeBuild stack...');
+                execSync('npm run deploy:codebuild', { stdio: 'inherit' });
+                console.log('\n✅ CodeBuild stack deployed');
+
+                console.log('\n🚀 Triggering CodeBuild to build account cleaner image...');
+                execSync('npm run codebuild:nuke', { stdio: 'inherit' });
+                console.log('\n✅ CodeBuild image build completed');
+              } catch (codeBuildError) {
+                console.error(`\n❌ CodeBuild deployment/build failed: ${codeBuildError.message}`);
+                console.error('You can manually run:');
+                console.error('  npm run deploy:codebuild');
+                console.error('  npm run codebuild:nuke');
+              }
+            } else {
+              console.log('\n⚠️  Skipping image build. You can build later with:');
+              console.log('  Option 1 (Docker): npm run docker:build-and-push');
+              console.log('  Option 2 (CodeBuild): npm run deploy:codebuild && npm run codebuild:nuke');
+            }
           } else {
             console.error(`\n❌ Failed to build/push Docker image: ${dockerError.message}`);
             console.error('You can manually run: npm run docker:build-and-push');
@@ -1783,7 +1813,38 @@ async function main() {
           console.log('\n✓ Frontend Docker image built and pushed successfully');
         } catch (dockerError) {
           if (dockerError.message.includes('docker info')) {
-            console.error('\n❌ Docker is not running. Please start Docker and run: npm run docker:frontend:build-and-push');
+            console.log('\n⚠️  Docker is not running or not installed.\n');
+
+            const { useCodeBuildFrontend } = await inquirer.prompt([
+              {
+                type: 'confirm',
+                name: 'useCodeBuildFrontend',
+                message: 'Use AWS CodeBuild to build and push the frontend image instead? (No Docker required)',
+                default: true
+              }
+            ]);
+
+            if (useCodeBuildFrontend) {
+              try {
+                // Check if CodeBuild stack is already deployed
+                console.log('\n🔨 Ensuring CodeBuild stack is deployed...');
+                execSync('npm run deploy:codebuild', { stdio: 'inherit' });
+                console.log('\n✅ CodeBuild stack ready');
+
+                console.log('\n🚀 Triggering CodeBuild to build frontend image...');
+                execSync('npm run codebuild:frontend', { stdio: 'inherit' });
+                console.log('\n✅ CodeBuild frontend image build completed');
+              } catch (codeBuildError) {
+                console.error(`\n❌ CodeBuild deployment/build failed: ${codeBuildError.message}`);
+                console.error('You can manually run:');
+                console.error('  npm run deploy:codebuild');
+                console.error('  npm run codebuild:frontend');
+              }
+            } else {
+              console.log('\n⚠️  Skipping frontend image build. You can build later with:');
+              console.log('  Option 1 (Docker): npm run docker:frontend:build-and-push');
+              console.log('  Option 2 (CodeBuild): npm run deploy:codebuild && npm run codebuild:frontend');
+            }
           } else {
             console.error(`\n❌ Failed to build/push frontend Docker image: ${dockerError.message}`);
             console.error('You can manually run: npm run docker:frontend:build-and-push');
@@ -1934,6 +1995,24 @@ async function verifyAndDeployECR() {
     return;
   }
 
+  // Ask whether to use Docker or CodeBuild for image builds
+  let useCodeBuildForImages = false;
+  try {
+    execSync('docker info', { stdio: 'pipe' });
+    console.log('✓ Docker is available\n');
+  } catch (error) {
+    console.log('⚠️  Docker is not running or not installed.\n');
+    const { useCodeBuild } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'useCodeBuild',
+        message: 'Use AWS CodeBuild to build images instead? (No Docker required)',
+        default: true
+      }
+    ]);
+    useCodeBuildForImages = useCodeBuild;
+  }
+
   // Deploy account cleaner if needed
   if (needsAccountCleaner) {
     console.log('\n🔨 Creating/deploying account cleaner ECR repository and image...');
@@ -1945,14 +2024,22 @@ async function verifyAndDeployECR() {
         console.log(`✓ ECR repository "${ecrRepoName}" created successfully`);
       }
 
-      // Build and push image
-      console.log('\n🐳 Building and pushing Docker image...');
-      console.log('This may take a few minutes...\n');
-      execSync('npm run docker:build-and-push', {
-        encoding: 'utf-8',
-        stdio: 'inherit'
-      });
-      console.log('\n✓ Docker image built and pushed successfully');
+      if (useCodeBuildForImages) {
+        console.log('\n🔨 Deploying CodeBuild stack...');
+        execSync('npm run deploy:codebuild', { stdio: 'inherit' });
+        console.log('\n🚀 Triggering CodeBuild to build account cleaner image...');
+        execSync('npm run codebuild:nuke', { stdio: 'inherit' });
+        console.log('\n✓ CodeBuild image build completed');
+      } else {
+        // Build and push image with Docker
+        console.log('\n🐳 Building and pushing Docker image...');
+        console.log('This may take a few minutes...\n');
+        execSync('npm run docker:build-and-push', {
+          encoding: 'utf-8',
+          stdio: 'inherit'
+        });
+        console.log('\n✓ Docker image built and pushed successfully');
+      }
     } catch (error) {
       console.error(`\n❌ Failed to deploy account cleaner: ${error.message}`);
     }
@@ -1969,14 +2056,20 @@ async function verifyAndDeployECR() {
         console.log(`✓ Frontend ECR repository "${frontendEcrRepoName}" created successfully`);
       }
 
-      // Build and push image
-      console.log('\n🐳 Building and pushing frontend Docker image...');
-      console.log('This may take a few minutes...\n');
-      execSync('npm run docker:frontend:build-and-push', {
-        encoding: 'utf-8',
-        stdio: 'inherit'
-      });
-      console.log('\n✓ Frontend Docker image built and pushed successfully');
+      if (useCodeBuildForImages) {
+        console.log('\n🚀 Triggering CodeBuild to build frontend image...');
+        execSync('npm run codebuild:frontend', { stdio: 'inherit' });
+        console.log('\n✓ CodeBuild frontend image build completed');
+      } else {
+        // Build and push image with Docker
+        console.log('\n🐳 Building and pushing frontend Docker image...');
+        console.log('This may take a few minutes...\n');
+        execSync('npm run docker:frontend:build-and-push', {
+          encoding: 'utf-8',
+          stdio: 'inherit'
+        });
+        console.log('\n✓ Frontend Docker image built and pushed successfully');
+      }
     } catch (error) {
       console.error(`\n❌ Failed to deploy frontend: ${error.message}`);
     }
