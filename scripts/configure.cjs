@@ -114,12 +114,31 @@ function hasValidConfiguration() {
 
 // Helper function to get AWS credentials configuration
 function getAwsConfig(region) {
-  const config = region ? { region } : {};
+  const config = {};
 
   // Use configured profile if available (set via --profile argument)
   if (process.env.AWS_PROFILE) {
     const { fromIni } = require('@aws-sdk/credential-providers');
     config.credentials = fromIni({ profile: process.env.AWS_PROFILE });
+
+    // If no region specified, try to get it from the profile
+    if (!region) {
+      try {
+        const profileRegion = execSync(`aws configure get region --profile ${process.env.AWS_PROFILE}`, {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe']
+        }).trim();
+        if (profileRegion) {
+          config.region = profileRegion;
+        }
+      } catch (error) {
+        // Silently fail - region will be auto-detected by SDK
+      }
+    } else {
+      config.region = region;
+    }
+  } else if (region) {
+    config.region = region;
   }
   // Otherwise, use default credential chain (env vars, default profile, instance role, etc.)
 
