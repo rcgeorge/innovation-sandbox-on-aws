@@ -9,29 +9,17 @@ Using the solution, customers can empower their teams to experiment, learn, and 
 To find out more about Innovation Sandbox on AWS visit our [AWS Solutions](https://aws.amazon.com/solutions/implementations/innovation-sandbox-on-aws)
 page.
 
-## Quick Start
-
-For the fastest path to deployment:
-
-1. **Install dependencies**: `npm install`
-2. **Run configuration wizard**: `npm run configure`
-   - Auto-detects your AWS environment
-   - Guides you through all required settings
-   - Optionally deploys all stacks in correct order
-3. **Access your deployment**: Get CloudFront or ALB URL from stack outputs
-
-The wizard handles everything including Commercial Bridge deployment for GovCloud regions.
-
 ## Table of Contents
 
 - [Innovation Sandbox on AWS](#innovation-sandbox-on-aws)
   - [Solution Overview](#solution-overview)
-  - [Quick Start](#quick-start)
   - [Table of Contents](#table-of-contents)
   - [Architecture](#architecture)
   - [Prerequisites](#prerequisites)
+  - [AWS Credentials Configuration](#aws-credentials-configuration)
   - [Environment Variables](#environment-variables)
   - [Deploy the Solution](#deploy-the-solution)
+    - [Quick Start - Automated Deployment](#quick-start---automated-deployment)
     - [Deployment Prerequisites](#deployment-prerequisites)
     - [Deploy from the AWS Console](#deploy-from-the-aws-console)
     - [Deploy from Source](#deploy-from-source)
@@ -63,9 +51,10 @@ In order to test, build, and deploy the solution from source the following prere
 - MacOS, Amazon Linux 2, or Windows Operating System
 - Cloned Repository
 - Node 22
-- Python (Optional)
-- Pre-Commit (Optional)
-- Docker (Optional)
+- Python (Optional, for pre-commit hooks)
+- Pre-Commit (Optional, for automated code checks)
+- Docker (Optional, for building ECR images locally - can use CodeBuild instead)
+- OpenSSL (Optional, required only for PCA certificate generation in GovCloud deployments)
 
 > **Note for Windows Users:** The solution now supports Windows development environments. All npm scripts have been updated to work cross-platform. The bash scripts in the `deployment/` folder are still Linux/MacOS only, but core development and deployment commands work on Windows.
 
@@ -75,7 +64,65 @@ Once your development environment meets the minimum requirements install the nec
 npm install
 ```
 
-> **Note:** Many of the commands in this file expect you to have appropriate AWS CLI access to the target accounts configured. If you have a multi-account deployment you will need to switch between account credentials to perform the commands on the appropriate accounts.
+## AWS Credentials Configuration
+
+The solution requires AWS credentials to deploy infrastructure. You have several options for providing credentials:
+
+### Option 1: AWS Profiles in .env (Recommended for GovCloud)
+
+For GovCloud deployments that require both commercial and GovCloud credentials, configure profiles in your `.env` file:
+
+```shell
+AWS_GOVCLOUD_PROFILE="govcloud"      # Profile for GovCloud account deployments
+AWS_COMMERCIAL_PROFILE="commercial"  # Profile for Commercial Bridge deployments
+```
+
+**Setup AWS CLI profiles:**
+
+```shell
+# Configure GovCloud profile
+aws configure --profile govcloud
+# Enter GovCloud access key, secret key, and region (e.g., us-gov-east-1)
+
+# Configure commercial profile
+aws configure --profile commercial
+# Enter commercial access key, secret key, and region (e.g., us-east-1)
+```
+
+The `run-with-env` script automatically uses the correct profile:
+- Commercial Bridge commands (`npm run commercial:*`) → Uses `AWS_COMMERCIAL_PROFILE`
+- GovCloud stack commands → Uses `AWS_GOVCLOUD_PROFILE`
+
+### Option 2: Command-Line Profile Override
+
+Pass `--profile` to any npm script command:
+
+```shell
+# Deploy to specific account using a profile
+npm run deploy:data -- --profile my-hub-account
+
+# Deploy commercial bridge with commercial profile
+npm run commercial:deploy -- --profile commercial
+```
+
+### Option 3: Default AWS Credential Chain
+
+If no profiles are configured, the AWS SDK uses the default credential chain:
+1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+2. AWS CLI default profile (`~/.aws/credentials`)
+3. EC2/ECS instance role credentials
+4. SSO credentials
+
+For single-account deployments, this is the simplest option.
+
+### Multi-Account Deployments
+
+For multi-account deployments, you'll need credentials for each account:
+- **Organization Management Account** - For AccountPool stack
+- **IDC Account** - For IDC stack
+- **Hub Account** - For Data, Compute/Container stacks
+
+Switch profiles between deployments or use separate terminal windows with different `AWS_PROFILE` environment variables.
 
 ## Environment Variables
 
@@ -129,11 +176,110 @@ Then open the `.env` file and configure the required values. The file provides c
 
 ## Deploy the Solution
 
+### Quick Start - Automated Deployment
+
+For the fastest path to deployment:
+
+1. **Configure AWS credentials**: Set up AWS CLI profiles (if multi-account or GovCloud)
+   ```shell
+   aws configure --profile your-profile-name
+   ```
+2. **Install dependencies**: `npm install`
+3. **Run configuration wizard**: `npm run configure`
+   - Auto-detects your AWS environment
+   - Guides you through all required settings
+   - **Optionally deploys all stacks in correct order** (including Commercial Bridge for GovCloud)
+4. **Access your deployment**: Get CloudFront or ALB URL from stack outputs
+
+The wizard can handle the complete deployment process, or you can choose to deploy manually using the commands in the sections below.
+
 ### Deployment Prerequisites
 
-The solution requires several prerequisite steps before attempting to deploy the solution. See the [implementation guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/prerequisites.html) for more details.
+The solution requires several manual setup steps in your AWS Organization **before** deploying any stacks. These steps cannot be automated and must be completed manually.
+
+#### Required Manual Setup (Before Any Deployment)
+
+**1. AWS Organization Setup**
+- Create or use existing AWS Organization
+- Identify a "Hub" account for Data and Compute/Container stacks
+- **Enable Service Control Policies (SCPs)** in the Organization
+  ```shell
+  # Enable SCPs in AWS Organizations console or via CLI:
+  aws organizations enable-policy-type --root-id r-xxxx --policy-type SERVICE_CONTROL_POLICY
+  ```
+
+**2. IAM Identity Center Configuration**
+- **Enable IAM Identity Center** at the organization level
+- Select a home region for IAM Identity Center
+- Note the Identity Store ID and SSO Instance ARN (auto-detected by configuration wizard)
+
+**3. CloudFormation StackSets Trusted Access**
+- **Required:** Enable trusted access with AWS Organizations
+  ```shell
+  # Enable StackSets trusted access
+  aws organizations enable-aws-service-access --service-principal member.org.stacksets.cloudformation.amazonaws.com
+  ```
+
+**4. AWS Cost Explorer**
+- **Enable Cost Explorer** on the Organization Management account
+- Allow 24 hours for initial data population
+  ```shell
+  # Enable via AWS Console: Billing → Cost Explorer → Enable Cost Explorer
+  # Or via AWS CLI (if available in your region)
+  ```
+
+**5. Amazon SES Configuration (For Email Notifications)**
+- Set up Amazon SES in the Hub account
+- Verify sender email address or domain
+- **Request production access** (required to send emails beyond sandbox limits)
+  ```shell
+  # Verify email address in SES console
+  # Submit production access request in SES console
+  ```
+
+**6. AWS Resource Access Manager (RAM)**
+- **Enable resource sharing** to allow cross-account sharing
+  ```shell
+  # Enable in Organizations console or via CLI:
+  aws ram enable-sharing-with-aws-organization
+  ```
+
+**7. AWS Lambda Quotas**
+- Verify Lambda concurrent executions quota is **at least 1000**
+- Request quota increase if needed
+  ```shell
+  # Check current quota
+  aws service-quotas get-service-quota --service-code lambda --quota-code L-B99A9384
+
+  # Request increase if needed
+  aws service-quotas request-service-quota-increase --service-code lambda --quota-code L-B99A9384 --desired-value 1000
+  ```
+
+**8. For GovCloud Deployments Only**
+- Ensure you have access to **both** a commercial AWS account (for Commercial Bridge) and a GovCloud account
+- Commercial account must be the Organization Management account or have Organizations delegated permissions
+
+#### Verification Checklist
+
+Before running `npm run configure` or deploying stacks, verify:
+
+- [ ] AWS Organization exists with SCPs enabled
+- [ ] IAM Identity Center is enabled and configured
+- [ ] CloudFormation StackSets trusted access is enabled
+- [ ] Cost Explorer is enabled (and has initial data if checking costs)
+- [ ] SES is configured with production access
+- [ ] RAM resource sharing is enabled
+- [ ] Lambda quotas are sufficient (1000+ concurrent executions)
+- [ ] For GovCloud: Access to both commercial and GovCloud accounts
+- [ ] AWS CLI configured with appropriate credentials/profiles
+
+For complete details, see the [implementation guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/prerequisites.html).
 
 ### Deploy from the AWS Console
+
+> **Note:** This deployment method is for **commercial AWS regions only**. GovCloud deployments require the Container stack (instead of Compute) and Commercial Bridge infrastructure. **GovCloud users should use [Deploy from Source](#deploy-from-source) method instead.**
+
+For commercial AWS deployments, use these CloudFormation templates:
 
 | Stack        |                                                                                                          CloudFormation Launch Link                                                                                                           |                                                         S3 Download Link                                                         |
 | ------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------------------: |
@@ -142,12 +288,29 @@ The solution requires several prerequisite steps before attempting to deploy the
 | Data         |    [Launch](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?&templateURL=https://solutions-reference.s3.amazonaws.com/innovation-sandbox-on-aws/latest/InnovationSandbox-Data.template&redirectId=GitHub)     |    [Download](https://solutions-reference.s3.amazonaws.com/innovation-sandbox-on-aws/latest/InnovationSandbox-Data.template)     |
 | Compute      |   [Launch](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?&templateURL=https://solutions-reference.s3.amazonaws.com/innovation-sandbox-on-aws/latest/InnovationSandbox-Compute.template&redirectId=GitHub)   |   [Download](https://solutions-reference.s3.amazonaws.com/innovation-sandbox-on-aws/latest/InnovationSandbox-Compute.template)   |
 
+**Why not GovCloud?** GovCloud deployments require:
+- Container stack (ECS/ALB) instead of Compute stack (CloudFront)
+- Commercial Bridge infrastructure deployed to a commercial AWS account
+- Different configuration context (IS_GOVCLOUD=true)
+
 ### Deploy from Source
 
 Deploying the solution from source uses AWS CDK to do so. If you have not already you will need to bootstrap the target accounts with the following command:
 
 ```shell
 npm run bootstrap
+```
+
+**For multi-account deployments**, bootstrap each account separately:
+
+```shell
+# Bootstrap using default credentials
+npm run bootstrap
+
+# Or bootstrap each account with specific profiles
+npm run bootstrap -- --profile hub-account
+npm run bootstrap -- --profile org-management
+npm run bootstrap -- --profile idc-account
 ```
 
 To deploy the solution into a single account, run the following command from the repository root:
@@ -165,16 +328,44 @@ npm run deploy:data
 npm run deploy:compute
 ```
 
+**For multi-account deployments with different AWS credentials per account:**
+
+```shell
+# Deploy to Organization Management account
+npm run deploy:account-pool -- --profile org-management
+
+# Deploy to IDC account
+npm run deploy:idc -- --profile idc-account
+
+# Deploy to Hub account
+npm run deploy:data -- --profile hub-account
+npm run deploy:compute -- --profile hub-account
+```
+
 **For GovCloud Deployments:**
 
-GovCloud deployments require additional infrastructure in a commercial AWS account to access commercial-only APIs (Cost Explorer, Organizations CreateGovCloudAccount). Follow this deployment order:
+GovCloud deployments require additional infrastructure in a commercial AWS account to access commercial-only APIs (Cost Explorer, Organizations CreateGovCloudAccount).
+
+> **Prerequisites:** Configure AWS CLI profiles for both commercial and GovCloud accounts. See [AWS Credentials Configuration](#aws-credentials-configuration) for setup instructions.
+
+Follow this deployment order:
 
 **Step 1: Deploy Commercial Bridge (Commercial AWS Account)**
+
+If using AWS profiles, these commands automatically use `AWS_COMMERCIAL_PROFILE` from `.env`:
 
 ```shell
 npm run commercial:install
 npm run commercial:bootstrap
 npm run commercial:deploy
+```
+
+Or explicitly specify a profile:
+
+```shell
+npm run commercial:install -- --profile commercial
+npm run commercial:bootstrap -- --profile commercial
+npm run commercial:deploy -- --profile commercial
 ```
 
 This deploys the following stacks to your commercial AWS account:
@@ -189,11 +380,22 @@ This deploys the following stacks to your commercial AWS account:
 
 **Step 2: Deploy GovCloud Stacks (GovCloud Account)**
 
+If using AWS profiles, these commands automatically use `AWS_GOVCLOUD_PROFILE` from `.env`:
+
 ```shell
 npm run deploy:account-pool
 npm run deploy:idc
 npm run deploy:data
 npm run deploy:container
+```
+
+Or explicitly specify a profile:
+
+```shell
+npm run deploy:account-pool -- --profile govcloud
+npm run deploy:idc -- --profile govcloud
+npm run deploy:data -- --profile govcloud
+npm run deploy:container -- --profile govcloud
 ```
 
 The container stack (`InnovationSandbox-Container`) deploys:
@@ -255,16 +457,16 @@ The solution supports using private ECR repositories for hosting Docker images. 
 
 The `npm run configure` wizard can automatically:
 - Create ECR repositories in your specified region
-- Build Docker images
+- Build Docker images (requires Docker locally)
 - Push images to your private ECR repositories
 
 The wizard will prompt for:
-1. **Account Cleaner ECR** - For hosting the AWS Nuke container (CodeBuild)
-2. **Frontend ECR** (Optional) - For hosting the frontend container (future ECS deployment)
+1. **Account Cleaner ECR** - For hosting the AWS Nuke container
+2. **Frontend ECR** (Optional) - For hosting the frontend container (for ECS deployment)
 
 When prompted, answer yes and follow the prompts. The wizard will handle everything automatically if you have Docker running.
 
-### Option 2: Manual Setup
+### Option 2: Build Locally with Docker (Requires Docker)
 
 > **Note:** Make sure you have the docker engine installed and running on your machine to perform the steps in this section.
 
@@ -290,11 +492,60 @@ Follow these steps to manually configure deployment to use private ECR images:
    ```
    This builds the Dockerfile at `source/frontend/Dockerfile`
 
+### Option 3: Build with CodeBuild (No Local Docker Required)
+
+If you don't have Docker installed locally or prefer to build images in AWS, use the CodeBuild stack. This is ideal for:
+- Environments without Docker (Windows without WSL, CI/CD pipelines)
+- Building large images that take too long locally
+- Teams that prefer cloud-based builds
+
+**Step 1: Deploy CodeBuild Stack**
+
+```shell
+npm run deploy:codebuild
+```
+
+This creates CodeBuild projects for building and pushing Docker images to your ECR repositories.
+
+**Step 2: Trigger Image Builds**
+
+```shell
+# Build and push account cleaner image only
+npm run codebuild:nuke
+
+# Build and push frontend image only
+npm run codebuild:frontend
+
+# Build and push both images
+npm run codebuild:build-and-push
+```
+
+The CodeBuild projects will:
+1. Pull the source code from your local directory
+2. Build the Docker images in AWS CodeBuild (no local Docker needed)
+3. Push images to your ECR repositories with `latest` tag
+4. Complete in 3-5 minutes per image
+
+**Monitoring builds:**
+```shell
+# Check build status in AWS Console
+# CloudFormation → InnovationSandbox-CodeBuild → Resources → View CodeBuild projects
+# Or use AWS CLI
+aws codebuild batch-get-builds --ids <build-id>
+```
+
+**Prerequisites:**
+- CodeBuild stack must be deployed first
+- `PRIVATE_ECR_REPO` and/or `PRIVATE_ECR_FRONTEND_REPO` configured in `.env`
+- ECR repositories must exist (create manually or use wizard)
+
 **Deploy Changes:**
 
-If you have already deployed the solution, redeploy the compute stack to use the private ECR repos:
+After building and pushing images, redeploy the compute or container stack to use the new images:
 ```shell
 npm run deploy:compute
+# OR
+npm run deploy:container
 ```
 
 ## Commercial Bridge for GovCloud
@@ -332,6 +583,8 @@ The Commercial Bridge creates the following infrastructure in your commercial AW
 
 ### Deployment Commands
 
+#### Basic Deployment (Core Stacks Only)
+
 From the repository root:
 
 ```shell
@@ -341,13 +594,155 @@ npm run commercial:install
 # Bootstrap CDK (one-time setup)
 npm run commercial:bootstrap
 
-# Deploy all commercial bridge stacks
+# Deploy core commercial bridge stacks (CostInfo, AccountCreation, AcceptInvitation, ApiGateway)
 npm run commercial:deploy
+```
 
-# Issue client certificates (if using PCA)
-npm run commercial:pca:issue-and-update-secret
+#### Deploying with Optional Stacks (PCA and/or Roles Anywhere)
 
-# Destroy all commercial bridge stacks
+To deploy optional stacks, configure them in `.env` **before** running `npm run commercial:deploy`:
+
+**Option A: Enable PCA (~$400/month)**
+
+1. Add to your `.env` file:
+   ```shell
+   ENABLE_PCA="true"
+   PCA_CA_COMMON_NAME="Commercial Bridge Root CA"  # Optional, has default
+   PCA_CA_ORGANIZATION="Innovation Sandbox"        # Optional, has default
+   ```
+
+2. Deploy (includes PCA stack):
+   ```shell
+   npm run commercial:deploy
+   ```
+
+3. **Configure GovCloud Secrets Manager settings** in `.env`:
+   ```shell
+   GOVCLOUD_SECRET_NAME="/InnovationSandbox/CommercialBridge/ClientCert"  # Optional, has default
+   GOVCLOUD_REGION="us-gov-east-1"                                        # Your GovCloud region
+   CERT_VALIDITY_DAYS="365"                                               # Optional, default 1 year
+   AWS_GOVCLOUD_PROFILE="govcloud"                                        # Your GovCloud AWS profile
+   ```
+
+4. Issue client certificates from PCA and store in GovCloud:
+   ```shell
+   npm run commercial:pca:issue-and-update-secret
+   ```
+
+   **This command automatically:**
+   - Generates RSA 2048-bit private key
+   - Creates Certificate Signing Request (CSR) with CN="govcloud-commercial-bridge"
+   - Issues certificate from PCA in commercial account
+   - Saves certificate files locally to `commercial-bridge/certs/`
+   - **Switches to GovCloud credentials** (uses `AWS_GOVCLOUD_PROFILE`)
+   - Creates or updates Secrets Manager secret in GovCloud
+   - Stores base64-encoded certificate and private key in secret
+
+   **Requirements:**
+   - OpenSSL must be installed (for CSR generation)
+   - Commercial AWS credentials configured (for PCA access)
+   - GovCloud AWS credentials configured (for Secrets Manager access)
+
+5. Note the secret ARN from output - you'll need it for GovCloud stack deployment.
+
+**Option B: Enable Roles Anywhere (Certificate-based auth)**
+
+1. Add to your `.env` file:
+   ```shell
+   ENABLE_ROLES_ANYWHERE="true"
+   ```
+
+2. If using self-signed certificates (free), generate CA first:
+   ```shell
+   cd commercial-bridge
+   npm run roles-anywhere:generate-ca
+   ```
+   This creates `certs/ca.pem` and `certs/ca.key`.
+
+3. Deploy (includes RolesAnywhere stack):
+   ```shell
+   npm run commercial:deploy
+   ```
+
+**Option C: Both PCA and Roles Anywhere (Recommended for Production)**
+
+This option combines automated certificate management (PCA) with secure certificate-based authentication (Roles Anywhere).
+
+1. Add to your `.env` file:
+   ```shell
+   # Commercial Bridge PCA configuration
+   ENABLE_PCA="true"
+   ENABLE_ROLES_ANYWHERE="true"
+   PCA_CA_COMMON_NAME="Commercial Bridge Root CA"  # Optional
+   PCA_CA_ORGANIZATION="Innovation Sandbox"        # Optional
+
+   # GovCloud Secrets Manager configuration
+   GOVCLOUD_SECRET_NAME="/InnovationSandbox/CommercialBridge/ClientCert"
+   GOVCLOUD_REGION="us-gov-east-1"
+   CERT_VALIDITY_DAYS="365"
+   AWS_GOVCLOUD_PROFILE="govcloud"  # Your GovCloud profile name
+   ```
+
+2. Deploy Commercial Bridge (includes both PCA and RolesAnywhere stacks):
+   ```shell
+   npm run commercial:deploy
+   ```
+   RolesAnywhere will automatically use the PCA as its trust anchor.
+
+3. Issue client certificates and store in GovCloud:
+   ```shell
+   npm run commercial:pca:issue-and-update-secret
+   ```
+
+   This performs the complete certificate lifecycle:
+   - Issues certificate from PCA in commercial account
+   - Saves locally to `commercial-bridge/certs/`
+   - Creates/updates GovCloud Secrets Manager secret with certificate
+   - Certificate is valid for 365 days (configurable via CERT_VALIDITY_DAYS)
+
+4. Extract Commercial Bridge outputs for GovCloud configuration:
+   ```shell
+   # Get Trust Anchor ARN
+   aws cloudformation describe-stacks --stack-name CommercialBridge-RolesAnywhere \
+     --query 'Stacks[0].Outputs[?OutputKey==`TrustAnchorArn`].OutputValue' --output text \
+     --profile commercial
+
+   # Get Profile ARN
+   aws cloudformation describe-stacks --stack-name CommercialBridge-RolesAnywhere \
+     --query 'Stacks[0].Outputs[?OutputKey==`ProfileArn`].OutputValue' --output text \
+     --profile commercial
+
+   # Get Role ARN
+   aws cloudformation describe-stacks --stack-name CommercialBridge-RolesAnywhere \
+     --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' --output text \
+     --profile commercial
+   ```
+
+5. Add these ARNs to your `.env` for GovCloud stack deployment:
+   ```shell
+   COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN="<secret-arn-from-step-3>"
+   COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN="<trust-anchor-arn>"
+   COMMERCIAL_BRIDGE_PROFILE_ARN="<profile-arn>"
+   COMMERCIAL_BRIDGE_ROLE_ARN="<role-arn>"
+   ```
+
+6. Now deploy GovCloud stacks - they'll use certificate-based authentication to call Commercial Bridge APIs.
+
+#### Using AWS Profiles
+
+Commands automatically use `AWS_COMMERCIAL_PROFILE` from `.env`, or specify explicitly:
+
+```shell
+npm run commercial:bootstrap -- --profile commercial
+npm run commercial:deploy -- --profile commercial
+npm run commercial:pca:issue-and-update-secret -- --profile commercial
+npm run commercial:destroy -- --profile commercial
+```
+
+#### Cleanup
+
+```shell
+# Destroy all commercial bridge stacks (including optional stacks if deployed)
 npm run commercial:destroy
 ```
 
@@ -361,8 +756,81 @@ The Commercial Bridge uses the following environment variables from `.env`:
 - `PCA_CA_ORGANIZATION` - Organization name for the CA (default: "Innovation Sandbox")
 - `ENABLE_ROLES_ANYWHERE` - Set to "true" to enable IAM Roles Anywhere
 
+**Certificate Generation (Required if using PCA + Roles Anywhere):**
+- `GOVCLOUD_SECRET_NAME` - Secrets Manager secret name in GovCloud (default: "/InnovationSandbox/CommercialBridge/ClientCert")
+- `GOVCLOUD_REGION` - GovCloud region for Secrets Manager (default: "us-gov-east-1")
+- `CERT_VALIDITY_DAYS` - Certificate validity period in days (default: "365")
+- `AWS_GOVCLOUD_PROFILE` - AWS CLI profile for GovCloud account access
+
 **Auto-populated During Deployment:**
-- `COMMERCIAL_BRIDGE_API_URL` - API Gateway endpoint URL (extracted from stack outputs)
+- `COMMERCIAL_BRIDGE_API_URL` - API Gateway endpoint URL (from stack outputs)
+- `COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN` - Secrets Manager secret ARN (after certificate issuance)
+- `COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN` - IAM Roles Anywhere trust anchor ARN (from stack outputs)
+- `COMMERCIAL_BRIDGE_PROFILE_ARN` - IAM Roles Anywhere profile ARN (from stack outputs)
+- `COMMERCIAL_BRIDGE_ROLE_ARN` - IAM role ARN for Roles Anywhere (from stack outputs)
+
+**Important Notes:**
+- Certificate issuance requires **both commercial and GovCloud credentials**
+  - Commercial credentials: To access PCA and issue certificates
+  - GovCloud credentials: To store certificates in Secrets Manager
+- The `pca:issue-and-update-secret` script automatically handles cross-partition credential switching
+- Certificates must be rotated before expiration (default: 1 year)
+
+### Complete Manual Setup Example (PCA + Roles Anywhere)
+
+Here's a complete step-by-step example for manually setting up PCA and Roles Anywhere:
+
+```shell
+# Step 1: Configure .env for Commercial Bridge with PCA and Roles Anywhere
+cat >> .env << 'EOF'
+# Commercial Bridge Configuration
+AWS_COMMERCIAL_PROFILE="commercial"
+AWS_GOVCLOUD_PROFILE="govcloud"
+ENABLE_PCA="true"
+ENABLE_ROLES_ANYWHERE="true"
+GOVCLOUD_REGION="us-gov-east-1"
+GOVCLOUD_SECRET_NAME="/InnovationSandbox/CommercialBridge/ClientCert"
+EOF
+
+# Step 2: Deploy Commercial Bridge to commercial account
+npm run commercial:install
+npm run commercial:bootstrap -- --profile commercial
+npm run commercial:deploy -- --profile commercial
+# Deploys: CostInfo, AccountCreation, AcceptInvitation, ApiGateway, PCA, RolesAnywhere
+
+# Step 3: Issue client certificate and store in GovCloud
+npm run commercial:pca:issue-and-update-secret
+# Requires: OpenSSL, commercial profile for PCA, govcloud profile for Secrets Manager
+# Creates: commercial-bridge/certs/govcloud-commercial-bridge.{pem,key,chain}
+# Updates: GovCloud Secrets Manager secret with base64-encoded cert and key
+
+# Step 4: Extract Commercial Bridge ARNs
+aws cloudformation describe-stacks --stack-name CommercialBridge-ApiGateway \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text \
+  --profile commercial > /tmp/api-url.txt
+
+aws cloudformation describe-stacks --stack-name CommercialBridge-RolesAnywhere \
+  --query 'Stacks[0].Outputs' --output json --profile commercial > /tmp/roles-anywhere-outputs.json
+
+# Step 5: Add extracted values to .env
+# COMMERCIAL_BRIDGE_API_URL="<from api-url.txt>"
+# COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN="<from roles-anywhere-outputs.json>"
+# COMMERCIAL_BRIDGE_PROFILE_ARN="<from roles-anywhere-outputs.json>"
+# COMMERCIAL_BRIDGE_ROLE_ARN="<from roles-anywhere-outputs.json>"
+# COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN="<from pca:issue-and-update-secret output>"
+
+# Step 6: Deploy GovCloud stacks (they'll use cert-based auth to call Commercial Bridge)
+npm run deploy:account-pool -- --profile govcloud
+npm run deploy:idc -- --profile govcloud
+npm run deploy:data -- --profile govcloud
+npm run deploy:container -- --profile govcloud
+```
+
+**Troubleshooting:**
+- **"OpenSSL not found"**: Install OpenSSL (included with Git for Windows, or install separately)
+- **"Access denied" for GovCloud Secrets Manager**: Verify `AWS_GOVCLOUD_PROFILE` is configured correctly
+- **"PcaStack not found"**: Ensure `ENABLE_PCA=true` before deploying commercial bridge
+- **Certificate expired**: Rotate certificates using the same `pca:issue-and-update-secret` command (updates existing secret)
 
 For more details, see [commercial-bridge/README.md](commercial-bridge/README.md).
 
