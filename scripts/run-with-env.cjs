@@ -5,9 +5,42 @@
 // This script loads environment variables from .env file and executes a command
 // Usage: node scripts/run-with-env.js <command> [args...] [--profile <profile-name>]
 
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+
+// Helper function to set CDK environment variables from AWS profile
+function setCDKEnvironmentFromProfile(profileName) {
+  try {
+    // Get account ID from STS
+    const accountOutput = execSync(`aws sts get-caller-identity --profile ${profileName} --query Account --output text`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+
+    if (accountOutput) {
+      process.env.CDK_DEFAULT_ACCOUNT = accountOutput;
+      console.log(`Set CDK_DEFAULT_ACCOUNT=${accountOutput}`);
+    }
+  } catch (error) {
+    // Silently fail - CDK will try other methods
+  }
+
+  try {
+    // Get region from profile config
+    const regionOutput = execSync(`aws configure get region --profile ${profileName}`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+
+    if (regionOutput) {
+      process.env.CDK_DEFAULT_REGION = regionOutput;
+      console.log(`Set CDK_DEFAULT_REGION=${regionOutput}`);
+    }
+  } catch (error) {
+    // Silently fail - CDK will try other methods
+  }
+}
 
 // Load .env file
 const envPath = path.join(__dirname, '..', '.env');
@@ -52,6 +85,9 @@ if (profileArgIndex !== -1) {
   // Set AWS_PROFILE environment variable (overrides .env)
   process.env.AWS_PROFILE = profileValue;
   console.log(`Using AWS profile: ${profileValue}`);
+
+  // Also set CDK environment variables from the profile for CDK bootstrap/deploy
+  setCDKEnvironmentFromProfile(profileValue);
 }
 
 // If no --profile was provided, check for context-specific profile env vars
@@ -66,9 +102,13 @@ if (!process.env.AWS_PROFILE) {
   if (isCommercialCommand && process.env.AWS_COMMERCIAL_PROFILE) {
     process.env.AWS_PROFILE = process.env.AWS_COMMERCIAL_PROFILE;
     console.log(`Using commercial profile from AWS_COMMERCIAL_PROFILE: ${process.env.AWS_PROFILE}`);
+    // Set CDK environment variables
+    setCDKEnvironmentFromProfile(process.env.AWS_COMMERCIAL_PROFILE);
   } else if (!isCommercialCommand && process.env.AWS_GOVCLOUD_PROFILE) {
     process.env.AWS_PROFILE = process.env.AWS_GOVCLOUD_PROFILE;
     console.log(`Using GovCloud profile from AWS_GOVCLOUD_PROFILE: ${process.env.AWS_PROFILE}`);
+    // Set CDK environment variables
+    setCDKEnvironmentFromProfile(process.env.AWS_GOVCLOUD_PROFILE);
   }
   // Otherwise fall back to AWS SDK default credential chain
   // (AWS_PROFILE from .env, environment variables, EC2/ECS instance roles, etc.)
