@@ -39,6 +39,7 @@ function setCDKEnvironmentFromProfile(profileName) {
       return;
     }
   } catch (error) {
+    console.log(`[DEBUG] AWS CLI region command failed for profile ${profileName}`);
     // Fall through to Method 2
   }
 
@@ -47,6 +48,8 @@ function setCDKEnvironmentFromProfile(profileName) {
     const homeDir = process.env.HOME || process.env.USERPROFILE;
     const configPath = path.join(homeDir, '.aws', 'config');
 
+    console.log(`[DEBUG] Reading config file: ${configPath}`);
+
     if (fs.existsSync(configPath)) {
       const configContent = fs.readFileSync(configPath, 'utf-8');
       // Look for [profile profileName] or [profileName] section
@@ -54,6 +57,7 @@ function setCDKEnvironmentFromProfile(profileName) {
       const match = configContent.match(profilePattern);
 
       if (match) {
+        console.log(`[DEBUG] Found profile section for ${profileName}`);
         const profileSection = match[2];
         const regionMatch = profileSection.match(/region\s*=\s*([^\s\n]+)/);
         if (regionMatch) {
@@ -61,11 +65,25 @@ function setCDKEnvironmentFromProfile(profileName) {
           process.env.CDK_DEFAULT_REGION = region;
           console.log(`Set CDK_DEFAULT_REGION=${region} (from config file)`);
           return;
+        } else {
+          console.log(`[DEBUG] No region found in profile section`);
         }
+      } else {
+        console.log(`[DEBUG] Profile section not found in config file`);
       }
+    } else {
+      console.log(`[DEBUG] Config file does not exist`);
     }
   } catch (error) {
-    // Silently fail - CDK will try other methods
+    console.log(`[DEBUG] Error reading config file:`, error.message);
+  }
+
+  // Method 3: Use sensible default based on profile name
+  console.log(`[WARN] Could not detect region for profile ${profileName}`);
+  // For commercial profiles, default to us-east-1
+  if (profileName.includes('commercial')) {
+    process.env.CDK_DEFAULT_REGION = 'us-east-1';
+    console.log(`Set CDK_DEFAULT_REGION=us-east-1 (default for commercial profile)`);
   }
 }
 
