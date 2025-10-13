@@ -174,17 +174,44 @@ async function getCurrentAwsAccountId(region) {
 function getCurrentAwsRegion() {
   // First check if AWS_PROFILE is set and get region from that profile
   if (process.env.AWS_PROFILE) {
+    // Method 1: Try reading from config file directly
     try {
-      console.log(`[DEBUG] Trying to get region from profile: ${process.env.AWS_PROFILE}`);
+      console.log(`[DEBUG] Trying to read region from AWS config file for profile: ${process.env.AWS_PROFILE}`);
+      const homeDir = process.env.HOME || process.env.USERPROFILE;
+      const configPath = path.join(homeDir, '.aws', 'config');
+
+      if (fs.existsSync(configPath)) {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        // Look for [profile profileName] or [profileName] section
+        const profilePattern = new RegExp(`\\[(profile )?${process.env.AWS_PROFILE}\\]([\\s\\S]*?)(?=\\n\\[|$)`, 'm');
+        const match = configContent.match(profilePattern);
+
+        if (match) {
+          const profileSection = match[2];
+          const regionMatch = profileSection.match(/region\s*=\s*([^\s\n]+)/);
+          if (regionMatch) {
+            const region = regionMatch[1].trim();
+            console.log(`[DEBUG] Region from config file: "${region}"`);
+            if (region) return region;
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`[DEBUG] Error reading config file:`, error.message);
+    }
+
+    // Method 2: Try AWS CLI command
+    try {
+      console.log(`[DEBUG] Trying AWS CLI command for profile: ${process.env.AWS_PROFILE}`);
       const output = execSync(`aws configure get region --profile ${process.env.AWS_PROFILE}`, {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe']
       });
       const region = output.trim();
-      console.log(`[DEBUG] Region from profile command: "${region}"`);
+      console.log(`[DEBUG] Region from CLI command: "${region}"`);
       if (region) return region;
     } catch (error) {
-      console.log(`[DEBUG] Error getting region from profile:`, error.message);
+      console.log(`[DEBUG] AWS CLI command failed:`, error.message);
       // Fall through to other methods
     }
   }
@@ -850,13 +877,42 @@ async function main() {
   // Detect AWS environment information
   console.log('🔍 Detecting AWS environment configuration...\n');
 
-  // Get region FIRST - it's needed for all other API calls
-  const currentRegion = getCurrentAwsRegion();
+  // Get Identity Center first (it's global and doesn't need a region)
+  const identityCenter = await getIdentityCenterInfo();
+
+  // Get region - try auto-detection first
+  let currentRegion = getCurrentAwsRegion();
   console.log(`[DEBUG] Detected region: ${currentRegion || 'none'}`);
 
-  // Now use the detected region for all other calls
+  // If region detection failed, prompt the user
+  if (!currentRegion) {
+    console.log('\n⚠️  Region could not be auto-detected from your AWS profile.\n');
+    if (process.env.AWS_PROFILE) {
+      console.log(`💡 Tip: Configure region for profile '${process.env.AWS_PROFILE}':`);
+      console.log(`   aws configure set region ${identityCenter.region || 'us-gov-east-1'} --profile ${process.env.AWS_PROFILE}\n`);
+    }
+
+    const { manualRegion } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'manualRegion',
+        message: 'Please enter your AWS region:',
+        default: identityCenter.region || 'us-gov-east-1',
+        validate: (input) => {
+          if (!/^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$/.test(input)) {
+            return 'Invalid region format. Examples: us-east-1, us-gov-east-1';
+          }
+          return true;
+        }
+      }
+    ]);
+
+    currentRegion = manualRegion;
+    console.log(`✓ Using region: ${currentRegion}\n`);
+  }
+
+  // Now use the detected/manual region for all other calls
   const currentAccountId = await getCurrentAwsAccountId(currentRegion);
-  const identityCenter = await getIdentityCenterInfo();
   const orgRootId = await getOrganizationRootId(currentRegion);
   const enabledRegions = await getEnabledRegions(currentRegion);
 
