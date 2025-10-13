@@ -32,12 +32,12 @@ const caType = (process.env.ROLES_ANYWHERE_CA_TYPE as CaType) || 'SELF_SIGNED';
 const allowedCN = process.env.ROLES_ANYWHERE_ALLOWED_CN || 'govcloud-commercial-bridge';
 
 // Create Lambda stacks
-const costInfoStack = new CostInfoLambdaStack(app, 'CostInfoLambdaStack', { env });
-const createGovCloudAccountStack = new CreateGovCloudAccountLambdaStack(app, 'CreateGovCloudAccountLambdaStack', { env });
-const acceptInvitationStack = new AcceptInvitationLambdaStack(app, 'AcceptInvitationLambdaStack', { env });
+const costInfoStack = new CostInfoLambdaStack(app, 'CommercialBridge-CostInfo', { env });
+const createGovCloudAccountStack = new CreateGovCloudAccountLambdaStack(app, 'CommercialBridge-AccountCreation', { env });
+const acceptInvitationStack = new AcceptInvitationLambdaStack(app, 'CommercialBridge-AcceptInvitation', { env });
 
 // Create API Gateway stack (depends on Lambda stacks)
-const apiStack = new ApiGatewayStack(app, 'ApiGatewayStack', {
+const apiStack = new ApiGatewayStack(app, 'CommercialBridge-ApiGateway', {
   env,
   costInfoLambda: costInfoStack.lambdaFunction,
   createGovCloudAccountLambda: createGovCloudAccountStack.lambdaFunction,
@@ -51,7 +51,7 @@ apiStack.addDependency(acceptInvitationStack);
 // Optionally create PCA for certificate management
 let pcaStack: PcaStack | undefined;
 if (enablePca) {
-  pcaStack = new PcaStack(app, 'PcaStack', {
+  pcaStack = new PcaStack(app, 'CommercialBridge-PCA', {
     env,
     caCommonName: pcaCommonName,
     caOrganization: pcaOrganization,
@@ -94,7 +94,7 @@ if (enableRolesAnywhere) {
     caCertificatePem = fs.readFileSync(caCertPath, 'utf-8');
   }
 
-  const rolesAnywhereStack = new RolesAnywhereStack(app, 'RolesAnywhereStack', {
+  const rolesAnywhereStack = new RolesAnywhereStack(app, 'CommercialBridge-RolesAnywhere', {
     env,
     caType,
     caCertificatePem,
