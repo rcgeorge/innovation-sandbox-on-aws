@@ -146,9 +146,9 @@ function getAwsConfig(region) {
 }
 
 // Function to get current AWS account ID using AWS SDK
-async function getCurrentAwsAccountId() {
+async function getCurrentAwsAccountId(region) {
   try {
-    const awsConfig = getAwsConfig();
+    const awsConfig = getAwsConfig(region);
     console.log(`[DEBUG] STS config:`, awsConfig.region ? `region=${awsConfig.region}` : 'no region', process.env.AWS_PROFILE ? `profile=${process.env.AWS_PROFILE}` : 'no profile');
     const client = new STSClient(awsConfig);
     const command = new GetCallerIdentityCommand({});
@@ -175,13 +175,16 @@ function getCurrentAwsRegion() {
   // First check if AWS_PROFILE is set and get region from that profile
   if (process.env.AWS_PROFILE) {
     try {
+      console.log(`[DEBUG] Trying to get region from profile: ${process.env.AWS_PROFILE}`);
       const output = execSync(`aws configure get region --profile ${process.env.AWS_PROFILE}`, {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe']
       });
       const region = output.trim();
+      console.log(`[DEBUG] Region from profile command: "${region}"`);
       if (region) return region;
     } catch (error) {
+      console.log(`[DEBUG] Error getting region from profile:`, error.message);
       // Fall through to other methods
     }
   }
@@ -268,9 +271,11 @@ async function getIdentityCenterInfo() {
 }
 
 // Function to get organization root ID using AWS SDK
-async function getOrganizationRootId() {
+async function getOrganizationRootId(region) {
   try {
-    const client = new OrganizationsClient(getAwsConfig());
+    const awsConfig = getAwsConfig(region);
+    console.log(`[DEBUG] Organizations config:`, awsConfig.region ? `region=${awsConfig.region}` : 'no region');
+    const client = new OrganizationsClient(awsConfig);
     const command = new ListRootsCommand({});
     const response = await client.send(command);
 
@@ -278,6 +283,7 @@ async function getOrganizationRootId() {
       return response.Roots[0].Id;
     }
   } catch (error) {
+    console.log(`[DEBUG] Organizations error:`, error.message);
     // Silently fail
   }
   return null;
@@ -289,7 +295,9 @@ async function getEnabledRegions(currentRegion) {
     // Use EC2 DescribeRegions which is more widely available and doesn't require special permissions
     // Must use a valid region for the credentials (e.g., GovCloud credentials need GovCloud region)
     const region = currentRegion || undefined; // Let SDK use default if no region specified
-    const client = new EC2Client(getAwsConfig(region));
+    const awsConfig = getAwsConfig(region);
+    console.log(`[DEBUG] EC2 config:`, awsConfig.region ? `region=${awsConfig.region}` : 'no region');
+    const client = new EC2Client(awsConfig);
     const command = new DescribeRegionsCommand({
       AllRegions: false // Only get opted-in regions
     });
@@ -304,6 +312,7 @@ async function getEnabledRegions(currentRegion) {
       return regions;
     }
   } catch (error) {
+    console.log(`[DEBUG] EC2 error:`, error.message);
     // Silently fail - might not have permissions or API not available in this region
   }
   return null;
@@ -841,10 +850,14 @@ async function main() {
   // Detect AWS environment information
   console.log('🔍 Detecting AWS environment configuration...\n');
 
-  const currentAccountId = await getCurrentAwsAccountId();
+  // Get region FIRST - it's needed for all other API calls
   const currentRegion = getCurrentAwsRegion();
+  console.log(`[DEBUG] Detected region: ${currentRegion || 'none'}`);
+
+  // Now use the detected region for all other calls
+  const currentAccountId = await getCurrentAwsAccountId(currentRegion);
   const identityCenter = await getIdentityCenterInfo();
-  const orgRootId = await getOrganizationRootId();
+  const orgRootId = await getOrganizationRootId(currentRegion);
   const enabledRegions = await getEnabledRegions(currentRegion);
 
   // Auto-detect GovCloud based on region
