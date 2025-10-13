@@ -27,7 +27,7 @@ function setCDKEnvironmentFromProfile(profileName) {
   }
 
   try {
-    // Get region from profile config
+    // Method 1: Try AWS CLI command
     const regionOutput = execSync(`aws configure get region --profile ${profileName}`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -36,6 +36,33 @@ function setCDKEnvironmentFromProfile(profileName) {
     if (regionOutput) {
       process.env.CDK_DEFAULT_REGION = regionOutput;
       console.log(`Set CDK_DEFAULT_REGION=${regionOutput}`);
+      return;
+    }
+  } catch (error) {
+    // Fall through to Method 2
+  }
+
+  // Method 2: Read from ~/.aws/config file directly
+  try {
+    const homeDir = process.env.HOME || process.env.USERPROFILE;
+    const configPath = path.join(homeDir, '.aws', 'config');
+
+    if (fs.existsSync(configPath)) {
+      const configContent = fs.readFileSync(configPath, 'utf-8');
+      // Look for [profile profileName] or [profileName] section
+      const profilePattern = new RegExp(`\\[(profile )?${profileName}\\]([\\s\\S]*?)(?=\\n\\[|$)`, 'm');
+      const match = configContent.match(profilePattern);
+
+      if (match) {
+        const profileSection = match[2];
+        const regionMatch = profileSection.match(/region\s*=\s*([^\s\n]+)/);
+        if (regionMatch) {
+          const region = regionMatch[1].trim();
+          process.env.CDK_DEFAULT_REGION = region;
+          console.log(`Set CDK_DEFAULT_REGION=${region} (from config file)`);
+          return;
+        }
+      }
     }
   } catch (error) {
     // Silently fail - CDK will try other methods
