@@ -19,7 +19,7 @@ page.
   - [AWS Credentials Configuration](#aws-credentials-configuration)
   - [Environment Variables](#environment-variables)
   - [Deploy the Solution](#deploy-the-solution)
-    - [Quick Start - Automated Deployment](#quick-start---automated-deployment)
+    - [Quick Start](#quick-start)
     - [Deployment Prerequisites](#deployment-prerequisites)
     - [Deploy from the AWS Console](#deploy-from-the-aws-console)
     - [Deploy from Source](#deploy-from-source)
@@ -157,7 +157,7 @@ The wizard will use the specified profile to auto-detect your AWS environment (a
 The wizard will:
 - **Auto-detect** your AWS environment:
   - Current AWS account ID
-  - Configured AWS region
+  - Configured AWS region (prompts if detection fails, using Identity Center region as default)
   - IAM Identity Center instance information (including KMS key type)
   - AWS Organizations root ID
   - Enabled AWS regions
@@ -166,17 +166,17 @@ The wizard will:
   - Auto-detects whether you're using AWS-owned or customer-managed keys
   - Only prompts for KMS ARN when using customer-managed keys
   - Sets `AWS_OWNED_KEY` for AWS-owned keys (skips unnecessary IAM permissions)
-- **Optional automated deployment**:
-  - For GovCloud: Deploy Commercial Bridge to commercial account first
-  - Bootstrap CDK in target accounts
-  - Deploy all Innovation Sandbox stacks in correct dependency order
-  - Complete end-to-end deployment from configuration to running infrastructure
+- **Recommend best practices**:
+  - For GovCloud Roles Anywhere: Defaults to AWS Private CA (automated cert management)
+  - Shows both Docker and CodeBuild options for container image builds
+  - Provides clear deployment instructions with all commands in correct order
 - Let you choose between single-account or multi-account deployment
 - Use detected values as smart defaults to minimize manual input
 - Guide you through all required configuration values
 - Validate inputs to ensure proper format
 - Preserve existing values if you're reconfiguring
 - Generate a properly formatted `.env` file
+- **Print step-by-step deployment commands** (wizard does NOT deploy automatically)
 
 ### Option 2: Manual Configuration
 
@@ -194,7 +194,7 @@ Then open the `.env` file and configure the required values. The file provides c
 
 ## Deploy the Solution
 
-### Quick Start - Automated Deployment
+### Quick Start
 
 For the fastest path to deployment:
 
@@ -209,17 +209,17 @@ For the fastest path to deployment:
    # For default AWS credentials
    npm run configure
 
-   # For GovCloud or specific profile (use double dash --)
-   npm run configure -- --profile govcloud
-   # Or simply
+   # For GovCloud or specific profile
    npm run configure govcloud
    ```
    - Auto-detects your AWS environment
    - Guides you through all required settings
-   - **Optionally deploys all stacks in correct order** (including Commercial Bridge for GovCloud)
-4. **Access your deployment**: Get CloudFront or ALB URL from stack outputs
+   - Generates `.env` file with your configuration
+   - **Prints deployment commands** in the correct order
+4. **Run deployment commands**: Execute the commands printed by the wizard
+5. **Access your deployment**: Get CloudFront or ALB URL from stack outputs
 
-The wizard can handle the complete deployment process, or you can choose to deploy manually using the commands in the sections below.
+The wizard focuses on configuration and provides clear, step-by-step deployment instructions including both Docker and CodeBuild options for container images.
 
 ### Deployment Prerequisites
 
@@ -434,7 +434,7 @@ The container stack (`InnovationSandbox-Container`) deploys:
 
 > **Note:** The container stack is required for GovCloud. For commercial regions, use the standard compute stack which uses CloudFront for better performance and lower cost.
 
-> **Tip:** The configuration wizard (`npm run configure`) can automate the entire deployment process for both commercial and GovCloud accounts.
+> **Tip:** The configuration wizard (`npm run configure`) provides step-by-step deployment instructions including both Docker and CodeBuild options for container images.
 
 ### Post Deployment Tasks
 
@@ -481,18 +481,19 @@ The solution supports using private ECR repositories for hosting Docker images. 
 - Deploying frontend to ECS instead of CloudFront (e.g., in GovCloud where CloudFront is unavailable)
 - Hosting images in your own account for security/compliance requirements
 
-### Option 1: Automated Setup via Configuration Wizard (Recommended)
+### Option 1: Guided Setup via Configuration Wizard (Recommended)
 
-The `npm run configure` wizard can automatically:
-- Create ECR repositories in your specified region
-- Build Docker images (requires Docker locally)
-- Push images to your private ECR repositories
+The `npm run configure` wizard will:
+- Prompt for ECR repository configuration
+- Provide deployment commands for both Docker and CodeBuild options
 
 The wizard will prompt for:
 1. **Account Cleaner ECR** - For hosting the AWS Nuke container
 2. **Frontend ECR** (Optional) - For hosting the frontend container (for ECS deployment)
 
-When prompted, answer yes and follow the prompts. The wizard will handle everything automatically if you have Docker running.
+After configuration, the wizard prints clear instructions showing:
+- **Option A**: Build with Docker locally (`npm run docker:build-and-push`)
+- **Option B**: Build with CodeBuild in AWS (no Docker required - `npm run deploy:codebuild && npm run codebuild:nuke`)
 
 ### Option 2: Build Locally with Docker (Requires Docker)
 

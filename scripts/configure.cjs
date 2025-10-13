@@ -488,7 +488,7 @@ async function deployStacks(answers, isGovCloud, currentRegion) {
       if (deployCommercial) {
         try {
           console.log('\n📦 Installing commercial bridge dependencies...');
-          execSync('npm run commercial:install', { stdio: 'inherit' });
+          execSync('npm run commercial:install', { stdio: 'inherit', env: process.env });
 
           // If Roles Anywhere is enabled with self-signed CA, generate the CA certificate first
           const usePCA = answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'PCA';
@@ -497,7 +497,7 @@ async function deployStacks(answers, isGovCloud, currentRegion) {
             if (!fs.existsSync(caCertPath)) {
               console.log('\n🔐 Generating self-signed CA certificate for Roles Anywhere...');
               try {
-                execSync('cd commercial-bridge && npm run roles-anywhere:generate-ca', { stdio: 'inherit' });
+                execSync('cd commercial-bridge && npm run roles-anywhere:generate-ca', { stdio: 'inherit', env: process.env });
                 console.log('✅ CA certificate generated');
               } catch (error) {
                 console.error('❌ Failed to generate CA certificate');
@@ -511,13 +511,13 @@ async function deployStacks(answers, isGovCloud, currentRegion) {
           }
 
           console.log('\n🔧 Bootstrapping CDK in commercial account...');
-          execSync('npm run commercial:bootstrap', { stdio: 'inherit' });
+          execSync('npm run commercial:bootstrap', { stdio: 'inherit', env: process.env });
 
           console.log('\n🚀 Deploying commercial bridge stacks...');
           if (usePCA) {
             console.log('   ⚠️  PCA enabled - This will cost ~$400/month');
           }
-          execSync('npm run commercial:deploy', { stdio: 'inherit' });
+          execSync('npm run commercial:deploy', { stdio: 'inherit', env: process.env });
 
           // If PCA is enabled, issue certificates automatically
           if (usePCA) {
@@ -525,7 +525,7 @@ async function deployStacks(answers, isGovCloud, currentRegion) {
             console.log('   This will generate certificates and store them in GovCloud Secrets Manager');
 
             try {
-              execSync('npm run commercial:pca:issue-and-update-secret', { stdio: 'inherit' });
+              execSync('npm run commercial:pca:issue-and-update-secret', { stdio: 'inherit', env: process.env });
               console.log('\n✅ Client certificates issued and stored in GovCloud!');
             } catch (error) {
               console.error('\n❌ Failed to issue certificates from PCA');
@@ -590,7 +590,7 @@ async function deployStacks(answers, isGovCloud, currentRegion) {
     if (bootstrapNow) {
       try {
         console.log('\n🔧 Running CDK bootstrap...');
-        execSync('npm run bootstrap', { stdio: 'inherit' });
+        execSync('npm run bootstrap', { stdio: 'inherit', env: process.env });
         console.log('\n✅ CDK bootstrap completed!\n');
       } catch (error) {
         console.error(`\n❌ Bootstrap failed: ${error.message}`);
@@ -622,7 +622,7 @@ async function deployStacks(answers, isGovCloud, currentRegion) {
       if (deploySingle) {
         try {
           console.log('\n🚀 Deploying all stacks (this may take 15-20 minutes)...');
-          execSync('npm run deploy:all', { stdio: 'inherit' });
+          execSync('npm run deploy:all', { stdio: 'inherit', env: process.env });
           console.log('\n✅ All stacks deployed successfully!\n');
         } catch (error) {
           console.error(`\n❌ Deployment failed: ${error.message}`);
@@ -655,7 +655,7 @@ async function deployStacks(answers, isGovCloud, currentRegion) {
         if (deployStack) {
           try {
             console.log(`\n🚀 Deploying ${stack.name} stack...`);
-            execSync(`npm run deploy:${stack.name}`, { stdio: 'inherit' });
+            execSync(`npm run deploy:${stack.name}`, { stdio: 'inherit', env: process.env });
             console.log(`\n✅ ${stack.label} deployed successfully!\n`);
           } catch (error) {
             console.error(`\n❌ ${stack.label} deployment failed: ${error.message}`);
@@ -695,7 +695,7 @@ async function deployStacks(answers, isGovCloud, currentRegion) {
     if (deployPostDeployment) {
       try {
         console.log('\n🚀 Deploying post-deployment stack...');
-        execSync('npm run deploy:post-deployment', { stdio: 'inherit' });
+        execSync('npm run deploy:post-deployment', { stdio: 'inherit', env: process.env });
         console.log('\n✅ Post-deployment stack deployed successfully!\n');
       } catch (error) {
         console.error(`\n❌ Post-deployment failed: ${error.message}`);
@@ -1693,10 +1693,139 @@ async function main() {
 
     console.log('\n✅ Configuration saved to .env file!\n');
 
-    // Handle ECR repository creation and Docker image build/push
+    // Print deployment instructions
+    printDeploymentInstructions(answers, isGovCloud, currentRegion);
+
+  } catch (error) {
+    if (error.isTtyError) {
+      console.error('\n❌ Error: Interactive prompts not available in this environment.');
+      console.error('Please manually copy .env.example to .env and configure it.\n');
+    } else {
+      console.error('\n❌ Configuration failed:', error.message);
+    }
+    process.exit(1);
+  }
+}
+
+// Function to print deployment instructions
+function printDeploymentInstructions(answers, isGovCloud, currentRegion) {
+  console.log('==============================================');
+  console.log('📋 Deployment Instructions');
+  console.log('==============================================\n');
+
+  console.log('Configuration complete! Follow these steps to deploy:\n');
+
+  let step = 1;
+
+  // Commercial Bridge for GovCloud
+  if (isGovCloud && answers.ENABLE_ROLES_ANYWHERE) {
+    console.log(`STEP ${step}: Deploy Commercial Bridge (Commercial AWS Account)`);
+    console.log('─'.repeat(60));
+    console.log('npm run commercial:install');
+    console.log('npm run commercial:bootstrap\n');
+
+    if (answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'SELF_SIGNED') {
+      console.log('# Generate self-signed CA certificate');
+      console.log('cd commercial-bridge && npm run roles-anywhere:generate-ca\n');
+    }
+
+    console.log('npm run commercial:deploy');
+
+    if (answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'PCA') {
+      console.log('npm run commercial:pca:issue-and-update-secret');
+      console.log('\n⚠️  PCA costs ~$400/month');
+    }
+
+    console.log('\n📋 After deployment, extract ARNs and add to .env:');
+    console.log('   COMMERCIAL_BRIDGE_API_URL, COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN,');
+    console.log('   COMMERCIAL_BRIDGE_PROFILE_ARN, COMMERCIAL_BRIDGE_ROLE_ARN,');
+    console.log('   COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN\n');
+    step++;
+  }
+
+  // ECR setup
+  if (answers.CONFIGURE_PRIVATE_ECR || answers.CONFIGURE_FRONTEND_ECR) {
+    console.log(`STEP ${step}: Build and Push Container Images (Optional)`);
+    console.log('─'.repeat(60));
+
     if (answers.CONFIGURE_PRIVATE_ECR) {
-      const ecrRegion = answers.PRIVATE_ECR_REPO_REGION;
-      const ecrRepoName = answers.PRIVATE_ECR_REPO;
+      console.log('Account Cleaner Image - Choose ONE option:\n');
+      console.log('  Option A: Local Docker Build');
+      console.log('    npm run docker:build-and-push\n');
+      console.log('  Option B: AWS CodeBuild (No Docker required)');
+      console.log('    npm run deploy:codebuild');
+      console.log('    npm run codebuild:nuke\n');
+    }
+
+    if (answers.CONFIGURE_FRONTEND_ECR) {
+      console.log('Frontend Image - Choose ONE option:\n');
+      console.log('  Option A: Local Docker Build');
+      console.log('    npm run docker:frontend:build-and-push\n');
+      console.log('  Option B: AWS CodeBuild (No Docker required)');
+      console.log('    npm run deploy:codebuild  # If not already deployed');
+      console.log('    npm run codebuild:frontend\n');
+    }
+    step++;
+  }
+
+  // Main deployment
+  console.log(`STEP ${step}: Bootstrap and Deploy Innovation Sandbox`);
+  console.log('─'.repeat(60));
+  console.log('# Bootstrap CDK');
+  console.log('npm run bootstrap\n');
+
+  if (answers.DEPLOYMENT_TYPE === 'single') {
+    console.log('# Deploy all stacks (single account)');
+    console.log('npm run deploy:all\n');
+  } else {
+    console.log('# Deploy stacks individually (multi-account)');
+    console.log('# Switch AWS credentials/profiles as needed for each account\n');
+    console.log('npm run deploy:account-pool  # Org Management Account');
+    console.log('npm run deploy:idc           # IDC Account');
+    console.log('npm run deploy:data          # Hub Account');
+    if (answers.CONFIGURE_CONTAINER_STACK) {
+      console.log('npm run deploy:container     # Hub Account\n');
+    } else {
+      console.log('npm run deploy:compute       # Hub Account\n');
+    }
+  }
+  step++;
+
+  // Post-deployment
+  console.log(`STEP ${step}: Post-Deployment (Optional)`);
+  console.log('─'.repeat(60));
+  console.log('npm run deploy:post-deployment\n');
+
+  // Tips
+  console.log('==============================================');
+  console.log('💡 Tips');
+  console.log('==============================================\n');
+
+  if (answers.DEPLOYMENT_TYPE === 'multi') {
+    console.log('For multi-account deployments with different profiles:');
+    console.log('  npm run deploy:account-pool -- --profile org-management');
+    console.log('  npm run deploy:idc -- --profile idc-account');
+    console.log('  npm run deploy:data -- --profile hub-account\n');
+  }
+
+  if (process.env.AWS_PROFILE) {
+    console.log(`Using profile '${process.env.AWS_PROFILE}' for deployments.`);
+    console.log('Commands will automatically use this profile via AWS_PROFILE env var.\n');
+  }
+
+  console.log('Review your .env file before deploying:');
+  console.log('  cat .env\n');
+
+  console.log('For help:');
+  console.log('  See README.md or the implementation guide\n');
+}
+
+// Legacy function - keeping for existing .env verification flow
+async function handleLegacyECRSetup(answers) {
+  // Handle ECR repository creation and Docker image build/push
+  if (answers.CONFIGURE_PRIVATE_ECR) {
+    const ecrRegion = answers.PRIVATE_ECR_REPO_REGION;
+    const ecrRepoName = answers.PRIVATE_ECR_REPO;
 
       // Create ECR repository if requested
       if (answers.CREATE_ECR_REPO) {
@@ -1750,15 +1879,24 @@ async function main() {
               try {
                 // Build frontend first (required for CDK synthesis)
                 console.log('\n📦 Building frontend (required for CDK synthesis)...');
-                execSync('npm run --workspace @amzn/innovation-sandbox-frontend build', { stdio: 'inherit' });
+                execSync('npm run --workspace @amzn/innovation-sandbox-frontend build', {
+                  stdio: 'inherit',
+                  env: process.env
+                });
                 console.log('✅ Frontend built');
 
                 console.log('\n🔨 Deploying CodeBuild stack...');
-                execSync('npm run deploy:codebuild', { stdio: 'inherit' });
+                execSync('npm run deploy:codebuild', {
+                  stdio: 'inherit',
+                  env: process.env
+                });
                 console.log('\n✅ CodeBuild stack deployed');
 
                 console.log('\n🚀 Triggering CodeBuild to build account cleaner image...');
-                execSync('npm run codebuild:nuke', { stdio: 'inherit' });
+                execSync('npm run codebuild:nuke', {
+                  stdio: 'inherit',
+                  env: process.env
+                });
                 console.log('\n✅ CodeBuild image build completed');
               } catch (codeBuildError) {
                 console.error(`\n❌ CodeBuild deployment/build failed: ${codeBuildError.message}`);
@@ -1834,13 +1972,21 @@ async function main() {
 
             if (useCodeBuildFrontend) {
               try {
+                // Build frontend first (required for CDK synthesis)
+                console.log('\n📦 Building frontend (required for CDK synthesis)...');
+                execSync('npm run --workspace @amzn/innovation-sandbox-frontend build', {
+                  stdio: 'inherit',
+                  env: process.env
+                });
+                console.log('✅ Frontend built');
+
                 // Check if CodeBuild stack is already deployed
                 console.log('\n🔨 Ensuring CodeBuild stack is deployed...');
-                execSync('npm run deploy:codebuild', { stdio: 'inherit' });
+                execSync('npm run deploy:codebuild', { stdio: 'inherit', env: process.env });
                 console.log('\n✅ CodeBuild stack ready');
 
                 console.log('\n🚀 Triggering CodeBuild to build frontend image...');
-                execSync('npm run codebuild:frontend', { stdio: 'inherit' });
+                execSync('npm run codebuild:frontend', { stdio: 'inherit', env: process.env });
                 console.log('\n✅ CodeBuild frontend image build completed');
               } catch (codeBuildError) {
                 console.error(`\n❌ CodeBuild deployment/build failed: ${codeBuildError.message}`);
@@ -2035,13 +2181,22 @@ async function verifyAndDeployECR() {
       if (useCodeBuildForImages) {
         // Build frontend first (required for CDK synthesis)
         console.log('\n📦 Building frontend (required for CDK synthesis)...');
-        execSync('npm run --workspace @amzn/innovation-sandbox-frontend build', { stdio: 'inherit' });
+        execSync('npm run --workspace @amzn/innovation-sandbox-frontend build', {
+          stdio: 'inherit',
+          env: process.env
+        });
         console.log('✅ Frontend built');
 
         console.log('\n🔨 Deploying CodeBuild stack...');
-        execSync('npm run deploy:codebuild', { stdio: 'inherit' });
+        execSync('npm run deploy:codebuild', {
+          stdio: 'inherit',
+          env: process.env
+        });
         console.log('\n🚀 Triggering CodeBuild to build account cleaner image...');
-        execSync('npm run codebuild:nuke', { stdio: 'inherit' });
+        execSync('npm run codebuild:nuke', {
+          stdio: 'inherit',
+          env: process.env
+        });
         console.log('\n✓ CodeBuild image build completed');
       } else {
         // Build and push image with Docker
@@ -2049,7 +2204,8 @@ async function verifyAndDeployECR() {
         console.log('This may take a few minutes...\n');
         execSync('npm run docker:build-and-push', {
           encoding: 'utf-8',
-          stdio: 'inherit'
+          stdio: 'inherit',
+          env: process.env
         });
         console.log('\n✓ Docker image built and pushed successfully');
       }
@@ -2071,7 +2227,10 @@ async function verifyAndDeployECR() {
 
       if (useCodeBuildForImages) {
         console.log('\n🚀 Triggering CodeBuild to build frontend image...');
-        execSync('npm run codebuild:frontend', { stdio: 'inherit' });
+        execSync('npm run codebuild:frontend', {
+          stdio: 'inherit',
+          env: process.env
+        });
         console.log('\n✓ CodeBuild frontend image build completed');
       } else {
         // Build and push image with Docker
@@ -2079,7 +2238,8 @@ async function verifyAndDeployECR() {
         console.log('This may take a few minutes...\n');
         execSync('npm run docker:frontend:build-and-push', {
           encoding: 'utf-8',
-          stdio: 'inherit'
+          stdio: 'inherit',
+          env: process.env
         });
         console.log('\n✓ Frontend Docker image built and pushed successfully');
       }
