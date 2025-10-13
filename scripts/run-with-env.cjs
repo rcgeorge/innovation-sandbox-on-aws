@@ -35,7 +35,9 @@ function setCDKEnvironmentFromProfile(profileName) {
 
     if (regionOutput) {
       process.env.CDK_DEFAULT_REGION = regionOutput;
+      process.env.AWS_REGION = regionOutput;  // Also set AWS_REGION (CDK prioritizes this)
       console.log(`Set CDK_DEFAULT_REGION=${regionOutput}`);
+      console.log(`Set AWS_REGION=${regionOutput}`);
       return;
     }
   } catch (error) {
@@ -63,7 +65,9 @@ function setCDKEnvironmentFromProfile(profileName) {
         if (regionMatch) {
           const region = regionMatch[1].trim();
           process.env.CDK_DEFAULT_REGION = region;
+          process.env.AWS_REGION = region;  // Also set AWS_REGION (CDK prioritizes this)
           console.log(`Set CDK_DEFAULT_REGION=${region} (from config file)`);
+          console.log(`Set AWS_REGION=${region}`);
           return;
         } else {
           console.log(`[DEBUG] No region found in profile section`);
@@ -83,7 +87,9 @@ function setCDKEnvironmentFromProfile(profileName) {
   // For commercial profiles, default to us-east-1
   if (profileName.includes('commercial')) {
     process.env.CDK_DEFAULT_REGION = 'us-east-1';
+    process.env.AWS_REGION = 'us-east-1';  // Also set AWS_REGION (CDK prioritizes this)
     console.log(`Set CDK_DEFAULT_REGION=us-east-1 (default for commercial profile)`);
+    console.log(`Set AWS_REGION=us-east-1`);
   }
 }
 
@@ -147,11 +153,24 @@ if (!process.env.AWS_PROFILE) {
   if (isCommercialCommand && process.env.AWS_COMMERCIAL_PROFILE) {
     process.env.AWS_PROFILE = process.env.AWS_COMMERCIAL_PROFILE;
     console.log(`Using commercial profile from AWS_COMMERCIAL_PROFILE: ${process.env.AWS_PROFILE}`);
+
+    // Unset conflicting region variables that might override CDK_DEFAULT_REGION
+    // This is critical when switching from GovCloud to Commercial contexts
+    delete process.env.AWS_REGION;
+    delete process.env.AWS_DEFAULT_REGION;
+    console.log('[DEBUG] Cleared AWS_REGION and AWS_DEFAULT_REGION to prevent conflicts');
+
     // Set CDK environment variables
     setCDKEnvironmentFromProfile(process.env.AWS_COMMERCIAL_PROFILE);
   } else if (!isCommercialCommand && process.env.AWS_GOVCLOUD_PROFILE) {
     process.env.AWS_PROFILE = process.env.AWS_GOVCLOUD_PROFILE;
     console.log(`Using GovCloud profile from AWS_GOVCLOUD_PROFILE: ${process.env.AWS_PROFILE}`);
+
+    // Unset conflicting region variables
+    delete process.env.AWS_REGION;
+    delete process.env.AWS_DEFAULT_REGION;
+    console.log('[DEBUG] Cleared AWS_REGION and AWS_DEFAULT_REGION to prevent conflicts');
+
     // Set CDK environment variables
     setCDKEnvironmentFromProfile(process.env.AWS_GOVCLOUD_PROFILE);
   }
