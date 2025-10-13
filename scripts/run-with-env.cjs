@@ -80,8 +80,9 @@ let commandString = args.join(' ');
 // Replace environment variable placeholders with actual values
 // This handles both $VAR and ${VAR} syntax
 commandString = commandString.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (match, varName) => {
-  // Use empty string if env var is defined but empty, otherwise keep original if undefined
-  return varName in process.env ? (process.env[varName] || '') : match;
+  // Return the value if defined, or empty string if not defined
+  // This ensures optional variables (like NUKE_CONFIG_FILE_PATH) don't pass as literal "$VAR"
+  return process.env[varName] || '';
 });
 
 // Security validation: Check for suspicious patterns that might indicate command injection
