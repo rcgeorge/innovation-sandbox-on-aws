@@ -2006,60 +2006,6 @@ async function handleLegacyECRSetup(answers) {
         }
       }
     }
-
-    // Ask if user wants to deploy now
-    const { deployNow } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'deployNow',
-        message: 'Do you want to deploy the stacks now?',
-        default: false
-      }
-    ]);
-
-    if (deployNow) {
-      await deployStacks(answers, isGovCloud, currentRegion);
-    } else {
-      console.log('\nNext steps:');
-      console.log('  1. Review the .env file and make any additional adjustments');
-      console.log('  2. Ensure you have AWS CLI configured with appropriate credentials');
-      if (isGovCloud) {
-        console.log('  3. Deploy Commercial Bridge (in commercial account):');
-        console.log('     - npm run commercial:install');
-        console.log('     - npm run commercial:bootstrap');
-        if (answers.ENABLE_ROLES_ANYWHERE && answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'SELF_SIGNED') {
-          console.log('     - cd commercial-bridge && npm run roles-anywhere:generate-ca');
-        }
-        console.log('     - npm run commercial:deploy');
-        if (answers.ENABLE_ROLES_ANYWHERE && answers.ROLES_ANYWHERE_CA_TYPE_CHOICE === 'PCA') {
-          console.log('     - npm run commercial:pca:issue-and-update-secret');
-        }
-      }
-      if (answers.DEPLOYMENT_TYPE === 'single') {
-        console.log(`  ${isGovCloud ? '4' : '3'}. Run: npm run bootstrap`);
-        console.log(`  ${isGovCloud ? '5' : '4'}. Run: npm run deploy:all`);
-        console.log('');
-      } else {
-        console.log(`  ${isGovCloud ? '4' : '3'}. Switch AWS credentials to each account as needed`);
-        console.log(`  ${isGovCloud ? '5' : '4'}. Run: npm run bootstrap`);
-        console.log(`  ${isGovCloud ? '6' : '5'}. Run deployment commands in order:`);
-        console.log('     - npm run deploy:account-pool');
-        console.log('     - npm run deploy:idc');
-        console.log('     - npm run deploy:data');
-        console.log(`     - npm run deploy:${answers.CONFIGURE_CONTAINER_STACK ? 'container' : 'compute'}`);
-        console.log('');
-      }
-    }
-
-  } catch (error) {
-    if (error.isTtyError) {
-      console.error('\n❌ Error: Interactive prompts not available in this environment.');
-      console.error('Please manually copy .env.example to .env and configure it.\n');
-    } else {
-      console.error('\n❌ Configuration failed:', error.message);
-    }
-    process.exit(1);
-  }
 }
 
 // Function to verify and deploy ECR repositories and images
