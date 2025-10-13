@@ -112,10 +112,24 @@ function hasValidConfiguration() {
   return true;
 }
 
+// Helper function to get AWS credentials configuration
+function getAwsConfig(region) {
+  const config = region ? { region } : {};
+
+  // Use configured profile if available (set via --profile argument)
+  if (process.env.AWS_PROFILE) {
+    const { fromIni } = require('@aws-sdk/credential-providers');
+    config.credentials = fromIni({ profile: process.env.AWS_PROFILE });
+  }
+  // Otherwise, use default credential chain (env vars, default profile, instance role, etc.)
+
+  return config;
+}
+
 // Function to get current AWS account ID using AWS SDK
 async function getCurrentAwsAccountId() {
   try {
-    const client = new STSClient({});
+    const client = new STSClient(getAwsConfig());
     const command = new GetCallerIdentityCommand({});
     const response = await client.send(command);
 
@@ -136,8 +150,22 @@ async function getCurrentAwsAccountId() {
 
 // Function to get current AWS region
 function getCurrentAwsRegion() {
+  // First check if AWS_PROFILE is set and get region from that profile
+  if (process.env.AWS_PROFILE) {
+    try {
+      const output = execSync(`aws configure get region --profile ${process.env.AWS_PROFILE}`, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      const region = output.trim();
+      if (region) return region;
+    } catch (error) {
+      // Fall through to other methods
+    }
+  }
+
+  // Try to get from AWS CLI default config
   try {
-    // Try to get from AWS CLI config
     const output = execSync('aws configure get region', {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -154,7 +182,7 @@ function getCurrentAwsRegion() {
 async function getIdentityCenterInfo() {
   // First try the current region
   try {
-    const client = new SSOAdminClient({});
+    const client = new SSOAdminClient(getAwsConfig());
     const command = new ListInstancesCommand({});
     const response = await client.send(command);
 
@@ -186,7 +214,7 @@ async function getIdentityCenterInfo() {
 
   for (const region of commonIdcRegions) {
     try {
-      const client = new SSOAdminClient({ region });
+      const client = new SSOAdminClient(getAwsConfig(region));
       const command = new ListInstancesCommand({});
       const response = await client.send(command);
 
@@ -220,7 +248,7 @@ async function getIdentityCenterInfo() {
 // Function to get organization root ID using AWS SDK
 async function getOrganizationRootId() {
   try {
-    const client = new OrganizationsClient({});
+    const client = new OrganizationsClient(getAwsConfig());
     const command = new ListRootsCommand({});
     const response = await client.send(command);
 
@@ -239,7 +267,7 @@ async function getEnabledRegions(currentRegion) {
     // Use EC2 DescribeRegions which is more widely available and doesn't require special permissions
     // Must use a valid region for the credentials (e.g., GovCloud credentials need GovCloud region)
     const region = currentRegion || undefined; // Let SDK use default if no region specified
-    const client = new EC2Client({ region });
+    const client = new EC2Client(getAwsConfig(region));
     const command = new DescribeRegionsCommand({
       AllRegions: false // Only get opted-in regions
     });
@@ -263,7 +291,7 @@ async function getEnabledRegions(currentRegion) {
 async function getComputeStackOutputs(namespace) {
   try {
     const stackName = 'InnovationSandbox-Compute';
-    const client = new CloudFormationClient({});
+    const client = new CloudFormationClient(getAwsConfig());
     const command = new DescribeStacksCommand({ StackName: stackName });
     const response = await client.send(command);
 
@@ -285,20 +313,6 @@ async function getComputeStackOutputs(namespace) {
     // Silently fail
   }
   return { restApiUrl: null };
-}
-
-// Helper function to get AWS credentials configuration
-function getAwsConfig(region) {
-  const config = { region };
-
-  // Use configured profile if available (set via --profile argument)
-  if (process.env.AWS_PROFILE) {
-    const { fromIni } = require('@aws-sdk/credential-providers');
-    config.credentials = fromIni({ profile: process.env.AWS_PROFILE });
-  }
-  // Otherwise, use default credential chain (env vars, default profile, instance role, etc.)
-
-  return config;
 }
 
 // Helper function to check if ECR repository exists using AWS SDK
