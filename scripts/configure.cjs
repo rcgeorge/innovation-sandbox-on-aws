@@ -332,6 +332,255 @@ async function detectExistingEcrRepos(namespace, region) {
   return result;
 }
 
+// Function to deploy stacks in order
+async function deployStacks(answers, isGovCloud, currentRegion) {
+  console.log('\n==============================================');
+  console.log('Starting Deployment Process');
+  console.log('==============================================\n');
+
+  // Determine account IDs based on deployment type
+  let hubAccountId;
+  if (answers.DEPLOYMENT_TYPE === 'single') {
+    hubAccountId = answers.SINGLE_ACCOUNT_ID;
+  } else {
+    hubAccountId = answers.HUB_ACCOUNT_ID;
+  }
+
+  const deploymentSteps = [];
+  let currentStep = 1;
+
+  try {
+    // Step 1: Deploy Commercial Bridge if GovCloud
+    if (isGovCloud) {
+      console.log(`\n[${currentStep}] Deploying Commercial Bridge to Commercial Account`);
+      console.log('================================================\n');
+
+      const { deployCommercial } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'deployCommercial',
+          message: 'GovCloud deployment detected. Deploy Commercial Bridge to commercial account now?',
+          default: true
+        }
+      ]);
+
+      if (deployCommercial) {
+        try {
+          console.log('\n📦 Installing commercial bridge dependencies...');
+          execSync('npm run commercial:install', { stdio: 'inherit' });
+
+          console.log('\n🔧 Bootstrapping CDK in commercial account...');
+          execSync('npm run commercial:bootstrap', { stdio: 'inherit' });
+
+          console.log('\n🚀 Deploying commercial bridge stacks...');
+          execSync('npm run commercial:deploy', { stdio: 'inherit' });
+
+          // If PCA is enabled, issue certificates
+          if (answers.ENABLE_COMMERCIAL_BRIDGE_PCA) {
+            const { issueCerts } = await inquirer.prompt([
+              {
+                type: 'confirm',
+                name: 'issueCerts',
+                message: 'PCA stack detected. Issue client certificates now?',
+                default: true
+              }
+            ]);
+
+            if (issueCerts) {
+              console.log('\n🔐 Issuing client certificates from PCA...');
+              execSync('npm run commercial:pca:issue-and-update-secret', { stdio: 'inherit' });
+            }
+          }
+
+          console.log('\n✅ Commercial Bridge deployment completed!\n');
+
+          // Extract outputs and update .env if needed
+          console.log('📋 Extracting Commercial Bridge outputs...');
+          try {
+            const apiUrl = execSync(
+              'aws cloudformation describe-stacks --stack-name CommercialBridge-ApiGateway --query "Stacks[0].Outputs[?OutputKey==\'ApiUrl\'].OutputValue" --output text',
+              { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+            ).trim();
+
+            if (apiUrl) {
+              console.log(`  ✓ API URL: ${apiUrl}`);
+              // Update .env with commercial bridge API URL
+              let envContent = fs.readFileSync(envPath, 'utf-8');
+              if (!envContent.includes('COMMERCIAL_BRIDGE_API_URL=') || existingEnv.COMMERCIAL_BRIDGE_API_URL === '') {
+                envContent = envContent.replace(/^# COMMERCIAL_BRIDGE_API_URL=.*/m, `COMMERCIAL_BRIDGE_API_URL="${apiUrl}"`);
+                fs.writeFileSync(envPath, envContent);
+                console.log('  ✓ Updated .env with COMMERCIAL_BRIDGE_API_URL');
+              }
+            }
+          } catch (error) {
+            console.log('  ⚠️  Could not extract outputs (stack may still be deploying)');
+          }
+
+        } catch (error) {
+          console.error(`\n❌ Commercial Bridge deployment failed: ${error.message}`);
+          console.error('Please fix the issue and run: npm run commercial:deploy\n');
+          return;
+        }
+      } else {
+        console.log('\n⚠️  Skipping Commercial Bridge deployment.');
+        console.log('   You must deploy it before deploying GovCloud stacks.');
+        console.log('   Run: npm run commercial:deploy\n');
+        return;
+      }
+      currentStep++;
+    }
+
+    // Step 2: Bootstrap main CDK
+    console.log(`\n[${currentStep}] Bootstrapping CDK in Target Account(s)`);
+    console.log('================================================\n');
+
+    const { bootstrapNow } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'bootstrapNow',
+        message: answers.DEPLOYMENT_TYPE === 'multi'
+          ? 'Bootstrap CDK in hub account? (You\'ll need to bootstrap org/idc accounts separately)'
+          : 'Bootstrap CDK now?',
+        default: true
+      }
+    ]);
+
+    if (bootstrapNow) {
+      try {
+        console.log('\n🔧 Running CDK bootstrap...');
+        execSync('npm run bootstrap', { stdio: 'inherit' });
+        console.log('\n✅ CDK bootstrap completed!\n');
+      } catch (error) {
+        console.error(`\n❌ Bootstrap failed: ${error.message}`);
+        console.error('Please fix the issue and run: npm run bootstrap\n');
+        return;
+      }
+    } else {
+      console.log('\n⚠️  Skipping bootstrap. Make sure to run "npm run bootstrap" before deploying.\n');
+      return;
+    }
+    currentStep++;
+
+    // Step 3: Deploy stacks
+    console.log(`\n[${currentStep}] Deploying Innovation Sandbox Stacks`);
+    console.log('================================================\n');
+
+    const stacksToDeployOrder = [];
+
+    if (answers.DEPLOYMENT_TYPE === 'single') {
+      const { deploySingle } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'deploySingle',
+          message: 'Deploy all stacks to single account now?',
+          default: true
+        }
+      ]);
+
+      if (deploySingle) {
+        try {
+          console.log('\n🚀 Deploying all stacks (this may take 15-20 minutes)...');
+          execSync('npm run deploy:all', { stdio: 'inherit' });
+          console.log('\n✅ All stacks deployed successfully!\n');
+        } catch (error) {
+          console.error(`\n❌ Deployment failed: ${error.message}`);
+          console.error('Check the error above and retry the failed stack.\n');
+          return;
+        }
+      }
+    } else {
+      // Multi-account deployment - deploy each stack individually
+      const stackDeployments = [
+        { name: 'account-pool', label: 'AccountPool Stack (Org Management Account)', account: answers.ORG_MGT_ACCOUNT_ID },
+        { name: 'idc', label: 'IDC Stack (IDC Account)', account: answers.IDC_ACCOUNT_ID },
+        { name: 'data', label: 'Data Stack (Hub Account)', account: hubAccountId },
+        { name: answers.CONFIGURE_CONTAINER_STACK ? 'container' : 'compute',
+          label: `${answers.CONFIGURE_CONTAINER_STACK ? 'Container' : 'Compute'} Stack (Hub Account)`,
+          account: hubAccountId
+        }
+      ];
+
+      for (const stack of stackDeployments) {
+        const { deployStack } = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'deployStack',
+            message: `Deploy ${stack.label} to account ${stack.account}?`,
+            default: true
+          }
+        ]);
+
+        if (deployStack) {
+          try {
+            console.log(`\n🚀 Deploying ${stack.name} stack...`);
+            execSync(`npm run deploy:${stack.name}`, { stdio: 'inherit' });
+            console.log(`\n✅ ${stack.label} deployed successfully!\n`);
+          } catch (error) {
+            console.error(`\n❌ ${stack.label} deployment failed: ${error.message}`);
+            const { continueDeployment } = await inquirer.prompt([
+              {
+                type: 'confirm',
+                name: 'continueDeployment',
+                message: 'Continue with remaining stacks?',
+                default: false
+              }
+            ]);
+            if (!continueDeployment) {
+              return;
+            }
+          }
+        } else {
+          console.log(`\n⚠️  Skipping ${stack.label}`);
+          console.log(`   You can deploy it later with: npm run deploy:${stack.name}\n`);
+        }
+      }
+    }
+
+    // Step 4: Optional post-deployment stack
+    currentStep++;
+    console.log(`\n[${currentStep}] Post-Deployment Configuration (Optional)`);
+    console.log('================================================\n');
+
+    const { deployPostDeployment } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'deployPostDeployment',
+        message: 'Deploy Post-Deployment stack? (Automates IAM Identity Center SAML configuration)',
+        default: false
+      }
+    ]);
+
+    if (deployPostDeployment) {
+      try {
+        console.log('\n🚀 Deploying post-deployment stack...');
+        execSync('npm run deploy:post-deployment', { stdio: 'inherit' });
+        console.log('\n✅ Post-deployment stack deployed successfully!\n');
+      } catch (error) {
+        console.error(`\n❌ Post-deployment failed: ${error.message}`);
+      }
+    }
+
+    // Show completion message with outputs
+    console.log('\n==============================================');
+    console.log('🎉 Deployment Complete!');
+    console.log('==============================================\n');
+
+    console.log('Next steps:');
+    console.log('  1. Access the web UI:');
+    if (answers.CONFIGURE_CONTAINER_STACK) {
+      console.log('     - Get the ALB URL from Container stack outputs');
+    } else {
+      console.log('     - Get the CloudFront URL from Compute stack outputs');
+    }
+    console.log('  2. Review the implementation guide for post-deployment configuration:');
+    console.log('     https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/post-deployment-configuration-tasks.html');
+    console.log('');
+
+  } catch (error) {
+    console.error(`\n❌ Deployment process failed: ${error.message}\n`);
+  }
+}
+
 async function main() {
   console.log('\n==============================================');
   console.log('Innovation Sandbox on AWS - Configuration Wizard');
@@ -742,11 +991,55 @@ async function main() {
     }
   },
   {
+    type: 'list',
+    name: 'IDC_KMS_KEY_TYPE',
+    message: 'Which KMS key is IAM Identity Center using for encryption?',
+    choices: [
+      { name: 'AWS-owned key (default, no additional permissions needed)', value: 'AWS_OWNED' },
+      { name: 'Customer-managed KMS key (requires KMS key ARN)', value: 'CUSTOMER_MANAGED' }
+    ],
+    default: async (answers) => {
+      // Check existing configuration
+      if (existingEnv.IDC_KMS_KEY_ARN) {
+        if (existingEnv.IDC_KMS_KEY_ARN === 'AWS_OWNED_KEY') {
+          return 'AWS_OWNED';
+        } else if (existingEnv.IDC_KMS_KEY_ARN.includes('arn:aws')) {
+          return 'CUSTOMER_MANAGED';
+        }
+      }
+
+      // Try to auto-detect from Identity Center
+      if (identityCenter.kmsKeyArn) {
+        return 'CUSTOMER_MANAGED';
+      }
+
+      // Try to discover from SSO instance ARN
+      if (answers.SSO_INSTANCE_ARN) {
+        try {
+          const region = answers.IDC_REGION || await getCurrentAwsRegion();
+          const client = new SSOAdminClient({ region });
+          const describeCommand = new DescribeInstanceCommand({ InstanceArn: answers.SSO_INSTANCE_ARN });
+          const describeResponse = await client.send(describeCommand);
+          const kmsKeyArn = describeResponse.EncryptionConfigurationDetails?.KmsKeyArn;
+          if (kmsKeyArn) {
+            return 'CUSTOMER_MANAGED';
+          }
+        } catch (error) {
+          // Silently fail
+        }
+      }
+
+      // Default to AWS owned key (most common)
+      return 'AWS_OWNED';
+    }
+  },
+  {
     type: 'input',
     name: 'IDC_KMS_KEY_ARN',
-    message: 'IAM Identity Center KMS Key ARN (for encryption):',
+    message: 'IAM Identity Center Customer-Managed KMS Key ARN:',
+    when: (answers) => answers.IDC_KMS_KEY_TYPE === 'CUSTOMER_MANAGED',
     default: async (answers) => {
-      if (existingEnv.IDC_KMS_KEY_ARN && !existingEnv.IDC_KMS_KEY_ARN.includes('00000000-0000-0000-0000-000000000000')) {
+      if (existingEnv.IDC_KMS_KEY_ARN && existingEnv.IDC_KMS_KEY_ARN !== 'AWS_OWNED_KEY' && !existingEnv.IDC_KMS_KEY_ARN.includes('00000000-0000-0000-0000-000000000000')) {
         return existingEnv.IDC_KMS_KEY_ARN;
       }
       if (identityCenter.kmsKeyArn) return identityCenter.kmsKeyArn;
@@ -771,7 +1064,7 @@ async function main() {
     },
     validate: (input) => {
       if (!input || input.trim() === '') {
-        return 'KMS Key ARN is required for IAM Identity Center encryption';
+        return 'KMS Key ARN is required when using customer-managed key';
       }
       // Support both commercial and GovCloud ARNs
       if (!input.match(/^arn:aws(-us-gov)?:kms:[a-z0-9-]+:\d{12}:key\/[a-f0-9-]+$/)) {
@@ -923,6 +1216,34 @@ async function main() {
     message: 'Do you want to build and push the frontend Docker image now? (requires Docker running)',
     when: (answers) => answers.CONFIGURE_FRONTEND_ECR,
     default: true
+  },
+  {
+    type: 'confirm',
+    name: 'ENABLE_COMMERCIAL_BRIDGE_PCA',
+    message: 'Enable AWS Private CA for Commercial Bridge certificates? (~$400/month, provides automated cert management)',
+    when: () => isGovCloud,
+    default: !!(existingEnv.ENABLE_PCA === 'true')
+  },
+  {
+    type: 'input',
+    name: 'PCA_CA_COMMON_NAME',
+    message: 'PCA Root Certificate Common Name:',
+    when: (answers) => answers.ENABLE_COMMERCIAL_BRIDGE_PCA,
+    default: existingEnv.PCA_CA_COMMON_NAME || 'Commercial Bridge Root CA'
+  },
+  {
+    type: 'input',
+    name: 'PCA_CA_ORGANIZATION',
+    message: 'PCA Certificate Organization:',
+    when: (answers) => answers.ENABLE_COMMERCIAL_BRIDGE_PCA,
+    default: existingEnv.PCA_CA_ORGANIZATION || 'Innovation Sandbox'
+  },
+  {
+    type: 'confirm',
+    name: 'ENABLE_ROLES_ANYWHERE',
+    message: 'Enable IAM Roles Anywhere for certificate-based authentication?',
+    when: () => isGovCloud,
+    default: !!(existingEnv.ENABLE_ROLES_ANYWHERE === 'true')
   },
   {
     type: 'confirm',
@@ -1085,7 +1406,17 @@ async function main() {
     envContent = envContent.replace(/^AWS_REGIONS=.*/m, `AWS_REGIONS="${answers.AWS_REGIONS}"`);
     envContent = envContent.replace(/^IDENTITY_STORE_ID=.*/m, `IDENTITY_STORE_ID="${answers.IDENTITY_STORE_ID}"`);
     envContent = envContent.replace(/^SSO_INSTANCE_ARN=.*/m, `SSO_INSTANCE_ARN="${answers.SSO_INSTANCE_ARN}"`);
-    envContent = envContent.replace(/^IDC_KMS_KEY_ARN=.*/m, `IDC_KMS_KEY_ARN="${answers.IDC_KMS_KEY_ARN}"`);
+
+    // Set IDC region (use detected region from Identity Center or fall back to current region)
+    const idcRegion = answers.IDC_REGION || identityCenter.region || currentRegion;
+    envContent = envContent.replace(/^IDC_REGION=.*/m, `IDC_REGION="${idcRegion}"`);
+
+    // Handle KMS key based on type selection
+    const idcKmsKeyValue = answers.IDC_KMS_KEY_TYPE === 'AWS_OWNED'
+      ? 'AWS_OWNED_KEY'
+      : answers.IDC_KMS_KEY_ARN;
+    envContent = envContent.replace(/^IDC_KMS_KEY_ARN=.*/m, `IDC_KMS_KEY_ARN="${idcKmsKeyValue}"`);
+
     envContent = envContent.replace(/^ADMIN_GROUP_NAME=.*/m, `ADMIN_GROUP_NAME="${answers.ADMIN_GROUP_NAME}"`);
     envContent = envContent.replace(/^MANAGER_GROUP_NAME=.*/m, `MANAGER_GROUP_NAME="${answers.MANAGER_GROUP_NAME}"`);
     envContent = envContent.replace(/^USER_GROUP_NAME=.*/m, `USER_GROUP_NAME="${answers.USER_GROUP_NAME}"`);
@@ -1134,6 +1465,22 @@ async function main() {
       }
       if (answers.VPC_CIDR) {
         envContent = envContent.replace(/^# VPC_CIDR=.*/m, `VPC_CIDR="${answers.VPC_CIDR}"`);
+      }
+    }
+
+    // Handle Commercial Bridge configuration (GovCloud only)
+    if (isGovCloud) {
+      if (answers.ENABLE_COMMERCIAL_BRIDGE_PCA) {
+        envContent = envContent.replace(/^# ENABLE_PCA=.*/m, `ENABLE_PCA="true"`);
+        if (answers.PCA_CA_COMMON_NAME) {
+          envContent = envContent.replace(/^# PCA_CA_COMMON_NAME=.*/m, `PCA_CA_COMMON_NAME="${answers.PCA_CA_COMMON_NAME}"`);
+        }
+        if (answers.PCA_CA_ORGANIZATION) {
+          envContent = envContent.replace(/^# PCA_CA_ORGANIZATION=.*/m, `PCA_CA_ORGANIZATION="${answers.PCA_CA_ORGANIZATION}"`);
+        }
+      }
+      if (answers.ENABLE_ROLES_ANYWHERE) {
+        envContent = envContent.replace(/^# ENABLE_ROLES_ANYWHERE=.*/m, `ENABLE_ROLES_ANYWHERE="true"`);
       }
     }
 
@@ -1244,33 +1591,45 @@ async function main() {
       }
     }
 
-    console.log('\nNext steps:');
-    console.log('  1. Review the .env file and make any additional adjustments');
-    console.log('  2. Ensure you have AWS CLI configured with appropriate credentials');
-    if (answers.DEPLOYMENT_TYPE === 'single') {
-      console.log('  3. Run: npm run bootstrap');
-      console.log('  4. Run: npm run deploy:all');
-      if (answers.CONFIGURE_CONTAINER_STACK) {
-        console.log('  5. After Compute stack is deployed, get the REST API URL from outputs');
-        console.log('     Add it to .env as REST_API_URL, then run: npm run deploy:container\n');
+    // Ask if user wants to deploy now
+    const { deployNow } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'deployNow',
+        message: 'Do you want to deploy the stacks now?',
+        default: false
+      }
+    ]);
+
+    if (deployNow) {
+      await deployStacks(answers, isGovCloud, currentRegion);
+    } else {
+      console.log('\nNext steps:');
+      console.log('  1. Review the .env file and make any additional adjustments');
+      console.log('  2. Ensure you have AWS CLI configured with appropriate credentials');
+      if (isGovCloud) {
+        console.log('  3. Deploy Commercial Bridge (in commercial account):');
+        console.log('     - npm run commercial:install');
+        console.log('     - npm run commercial:bootstrap');
+        console.log('     - npm run commercial:deploy');
+        if (answers.ENABLE_COMMERCIAL_BRIDGE_PCA) {
+          console.log('     - npm run commercial:pca:issue-and-update-secret');
+        }
+      }
+      if (answers.DEPLOYMENT_TYPE === 'single') {
+        console.log(`  ${isGovCloud ? '4' : '3'}. Run: npm run bootstrap`);
+        console.log(`  ${isGovCloud ? '5' : '4'}. Run: npm run deploy:all`);
+        console.log('');
       } else {
+        console.log(`  ${isGovCloud ? '4' : '3'}. Switch AWS credentials to each account as needed`);
+        console.log(`  ${isGovCloud ? '5' : '4'}. Run: npm run bootstrap`);
+        console.log(`  ${isGovCloud ? '6' : '5'}. Run deployment commands in order:`);
+        console.log('     - npm run deploy:account-pool');
+        console.log('     - npm run deploy:idc');
+        console.log('     - npm run deploy:data');
+        console.log(`     - npm run deploy:${answers.CONFIGURE_CONTAINER_STACK ? 'container' : 'compute'}`);
         console.log('');
       }
-    } else {
-      console.log('  3. Switch AWS credentials to each account as needed');
-      console.log('  4. Run: npm run bootstrap');
-      console.log('  5. Run deployment commands in order:');
-      console.log('     - npm run deploy:account-pool');
-      console.log('     - npm run deploy:idc');
-      console.log('     - npm run deploy:data');
-      console.log('     - npm run deploy:compute');
-      if (answers.CONFIGURE_CONTAINER_STACK) {
-        console.log('  6. After Compute stack is deployed:');
-        console.log('     - Get the REST API URL from Compute stack outputs');
-        console.log('     - Add it to .env as REST_API_URL');
-        console.log('     - Run: npm run deploy:container');
-      }
-      console.log('');
     }
 
   } catch (error) {

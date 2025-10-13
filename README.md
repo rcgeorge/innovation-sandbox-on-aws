@@ -9,10 +9,24 @@ Using the solution, customers can empower their teams to experiment, learn, and 
 To find out more about Innovation Sandbox on AWS visit our [AWS Solutions](https://aws.amazon.com/solutions/implementations/innovation-sandbox-on-aws)
 page.
 
+## Quick Start
+
+For the fastest path to deployment:
+
+1. **Install dependencies**: `npm install`
+2. **Run configuration wizard**: `npm run configure`
+   - Auto-detects your AWS environment
+   - Guides you through all required settings
+   - Optionally deploys all stacks in correct order
+3. **Access your deployment**: Get CloudFront or ALB URL from stack outputs
+
+The wizard handles everything including Commercial Bridge deployment for GovCloud regions.
+
 ## Table of Contents
 
 - [Innovation Sandbox on AWS](#innovation-sandbox-on-aws)
   - [Solution Overview](#solution-overview)
+  - [Quick Start](#quick-start)
   - [Table of Contents](#table-of-contents)
   - [Architecture](#architecture)
   - [Prerequisites](#prerequisites)
@@ -26,6 +40,7 @@ page.
     - [Unit Tests](#unit-tests)
     - [E2E Tests](#e2e-tests)
   - [Using Private ECR Repository](#using-private-ecr-repository)
+  - [Commercial Bridge for GovCloud](#commercial-bridge-for-govcloud)
   - [Uninstalling the Solution](#uninstalling-the-solution)
   - [Cost Scaling](#cost-scaling)
   - [File Structure](#file-structure)
@@ -78,8 +93,19 @@ The wizard will:
 - **Auto-detect** your AWS environment:
   - Current AWS account ID
   - Configured AWS region
-  - IAM Identity Center instance information
+  - IAM Identity Center instance information (including KMS key type)
   - AWS Organizations root ID
+  - Enabled AWS regions
+  - Existing ECR repositories
+- **Intelligently handle IAM Identity Center KMS keys**:
+  - Auto-detects whether you're using AWS-owned or customer-managed keys
+  - Only prompts for KMS ARN when using customer-managed keys
+  - Sets `AWS_OWNED_KEY` for AWS-owned keys (skips unnecessary IAM permissions)
+- **Optional automated deployment**:
+  - For GovCloud: Deploy Commercial Bridge to commercial account first
+  - Bootstrap CDK in target accounts
+  - Deploy all Innovation Sandbox stacks in correct dependency order
+  - Complete end-to-end deployment from configuration to running infrastructure
 - Let you choose between single-account or multi-account deployment
 - Use detected values as smart defaults to minimize manual input
 - Guide you through all required configuration values
@@ -96,6 +122,10 @@ npm run env:init
 ```
 
 Then open the `.env` file and configure the required values. The file provides comments explaining each environment variable. Optional variables are not required to deploy the solution.
+
+**Important Notes:**
+- **IAM Identity Center KMS Key**: Most deployments use AWS-owned keys. Set `IDC_KMS_KEY_ARN="AWS_OWNED_KEY"` if you're using the default AWS-owned key (recommended). Only provide a KMS ARN if you're using a customer-managed key.
+- **GovCloud Deployments**: Additional Commercial Bridge configuration variables are required. See the [Commercial Bridge for GovCloud](#commercial-bridge-for-govcloud) section.
 
 ## Deploy the Solution
 
@@ -135,9 +165,29 @@ npm run deploy:data
 npm run deploy:compute
 ```
 
-**For GovCloud or ECS-based Deployments:**
+**For GovCloud Deployments:**
 
-If deploying to GovCloud regions or using ECS for frontend hosting instead of CloudFront, use the container stack:
+GovCloud deployments require additional infrastructure in a commercial AWS account to access commercial-only APIs (Cost Explorer, Organizations CreateGovCloudAccount). Follow this deployment order:
+
+**Step 1: Deploy Commercial Bridge (Commercial AWS Account)**
+
+```shell
+npm run commercial:install
+npm run commercial:bootstrap
+npm run commercial:deploy
+```
+
+This deploys the following stacks to your commercial AWS account:
+- `CommercialBridge-CostInfo` - Lambda for querying Cost Explorer
+- `CommercialBridge-AccountCreation` - Lambda for creating GovCloud accounts
+- `CommercialBridge-AcceptInvitation` - Lambda for accepting org invitations
+- `CommercialBridge-ApiGateway` - REST API with usage plans and API key
+
+**Optional Commercial Bridge Stacks:**
+- `CommercialBridge-PCA` - AWS Private CA for certificate management (~$400/month, set `ENABLE_PCA=true`)
+- `CommercialBridge-RolesAnywhere` - IAM Roles Anywhere for cert-based auth (set `ENABLE_ROLES_ANYWHERE=true`)
+
+**Step 2: Deploy GovCloud Stacks (GovCloud Account)**
 
 ```shell
 npm run deploy:account-pool
@@ -152,7 +202,9 @@ The container stack (`InnovationSandbox-Container`) deploys:
 - **Account cleaner ECS tasks** (same as compute stack)
 - All backend Lambda functions and APIs (same as compute stack)
 
-> **Note:** The container stack is designed for regions where CloudFront is not available (e.g., AWS GovCloud). For commercial regions, use the standard compute stack which uses CloudFront for better performance and lower cost.
+> **Note:** The container stack is required for GovCloud. For commercial regions, use the standard compute stack which uses CloudFront for better performance and lower cost.
+
+> **Tip:** The configuration wizard (`npm run configure`) can automate the entire deployment process for both commercial and GovCloud accounts.
 
 ### Post Deployment Tasks
 
@@ -245,7 +297,78 @@ If you have already deployed the solution, redeploy the compute stack to use the
 npm run deploy:compute
 ```
 
+## Commercial Bridge for GovCloud
+
+The Commercial Bridge is a separate CDK application deployed to a **commercial AWS account** that provides GovCloud Innovation Sandbox access to commercial-only AWS APIs.
+
+### Why Commercial Bridge is Needed
+
+AWS GovCloud regions don't have direct access to:
+1. **AWS Cost Explorer API** - Cost data resides in the commercial partition
+2. **Organizations CreateGovCloudAccount API** - Only available in commercial regions
+
+The Commercial Bridge solves this by deploying API endpoints in commercial AWS that the GovCloud deployment can call.
+
+### Architecture
+
+The Commercial Bridge creates the following infrastructure in your commercial AWS account:
+
+**Core Stacks (Always Deployed):**
+- `CommercialBridge-CostInfo` - Lambda function with Cost Explorer permissions
+- `CommercialBridge-AccountCreation` - Lambda function with Organizations permissions
+- `CommercialBridge-AcceptInvitation` - Lambda function for accepting organization invitations
+- `CommercialBridge-ApiGateway` - REST API with usage plans, throttling, and API key authentication
+
+**Optional Stacks:**
+- `CommercialBridge-PCA` - AWS Private Certificate Authority for certificate management (~$400/month)
+  - Provides centralized CA management with automated lifecycle controls
+  - Certificate revocation via CRL/OCSP
+  - CloudTrail audit of all certificate issuance
+  - Set `ENABLE_PCA=true` in `.env` to enable
+- `CommercialBridge-RolesAnywhere` - IAM Roles Anywhere for certificate-based authentication
+  - Enables secure authentication without long-lived API keys
+  - Supports both self-signed and PCA-issued certificates
+  - Set `ENABLE_ROLES_ANYWHERE=true` in `.env` to enable
+
+### Deployment Commands
+
+From the repository root:
+
+```shell
+# Install dependencies
+npm run commercial:install
+
+# Bootstrap CDK (one-time setup)
+npm run commercial:bootstrap
+
+# Deploy all commercial bridge stacks
+npm run commercial:deploy
+
+# Issue client certificates (if using PCA)
+npm run commercial:pca:issue-and-update-secret
+
+# Destroy all commercial bridge stacks
+npm run commercial:destroy
+```
+
+### Configuration
+
+The Commercial Bridge uses the following environment variables from `.env`:
+
+**Core Configuration:**
+- `ENABLE_PCA` - Set to "true" to deploy AWS Private CA (~$400/month)
+- `PCA_CA_COMMON_NAME` - Common Name for the CA certificate (default: "Commercial Bridge Root CA")
+- `PCA_CA_ORGANIZATION` - Organization name for the CA (default: "Innovation Sandbox")
+- `ENABLE_ROLES_ANYWHERE` - Set to "true" to enable IAM Roles Anywhere
+
+**Auto-populated During Deployment:**
+- `COMMERCIAL_BRIDGE_API_URL` - API Gateway endpoint URL (extracted from stack outputs)
+
+For more details, see [commercial-bridge/README.md](commercial-bridge/README.md).
+
 ## Uninstalling the Solution
+
+### For Commercial Deployments
 
 To uninstall the solution, run the following command from the repository root:
 
@@ -267,6 +390,28 @@ npm run destroy:account-pool
 
 > **Note:** Only destroy either the compute stack OR the container stack, not both. Destroy in reverse order of deployment.
 
+### For GovCloud Deployments
+
+For GovCloud deployments, destroy both the GovCloud and Commercial Bridge stacks:
+
+**Step 1: Destroy GovCloud Stacks**
+```shell
+npm run destroy:all
+```
+
+**Step 2: Destroy Commercial Bridge (Commercial Account)**
+```shell
+npm run commercial:destroy
+```
+
+This destroys all Commercial Bridge stacks:
+- `CommercialBridge-RolesAnywhere` (if deployed)
+- `CommercialBridge-PCA` (if deployed)
+- `CommercialBridge-ApiGateway`
+- `CommercialBridge-AcceptInvitation`
+- `CommercialBridge-AccountCreation`
+- `CommercialBridge-CostInfo`
+
 ## Cost Scaling
 
 This solution incurs cost for both the solution infrastructure and any activity that occurs within the sandbox accounts. Cost will vary greatly based on sandbox account usage.
@@ -277,12 +422,17 @@ For more details on solution infrastructure cost estimation see the [implementat
 
 ```
 root
+├── commercial-bridge/              # CDK app for GovCloud deployments (deployed to commercial AWS account)
+│   ├── infrastructure                  # CDK stacks for Commercial Bridge API
+│   ├── lambdas                         # Lambda functions for cost reporting and account creation
+│   └── scripts                         # Certificate generation scripts for IAM Roles Anywhere
 ├── deployment/                     # shell scripts to generate native cloudformation distributables
 │   ├── global-s3-assets                # generated dist files for cdk synthesized cloudformation templates
 │   ├── regional-s3-assets              # generated dist files for zipped runtime assets such as lambda functions
 │   └── build-s3-dist.sh                # builds solution into distributable assets that can be deployed with cloudformation
-├── docs/                           # shell scripts to generate native cloudformation distributables
-├── scripts/                        # scripts used to run checks on the repository
+├── docs/                           # documentation and architecture diagrams
+├── scripts/                        # scripts used to run checks and configuration on the repository
+│   └── configure.cjs                   # interactive configuration wizard
 ├── source/                         # source code separated into multiple stand alone packages
 │   ├── common                          # common libraries used across the solution
 │   ├── e2e                             # e2e test suite
@@ -290,6 +440,7 @@ root
 │   ├── infrastructure                  # cdk application consisting of solution infrastructure
 │   ├── lambdas                         # lambda function runtime code, contains multiple lambdas each of which is its own package
 │   └── layers                          # lambda layers, contains multiple layers each of which is its own package
+├── .env.example                    # template for environment variables
 ├── .pre-commit-config.yaml         # pre-commit hook configurations
 └── package.json                    # top level npm package.json file with scripts to serve as orchestrated monorepo commands
 ```

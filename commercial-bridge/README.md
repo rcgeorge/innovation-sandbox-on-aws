@@ -64,10 +64,14 @@ AWS_PROFILE=commercial npm run deploy
 The deploy command will:
 - Build all Lambda TypeScript code
 - Synthesize CloudFormation templates
-- Deploy three stacks:
-  1. `CostInfoLambdaStack`
-  2. `CreateGovCloudAccountLambdaStack`
-  3. `ApiGatewayStack`
+- Deploy core stacks:
+  1. `CommercialBridge-CostInfo`
+  2. `CommercialBridge-AccountCreation`
+  3. `CommercialBridge-AcceptInvitation`
+  4. `CommercialBridge-ApiGateway`
+- Deploy optional stacks (if configured):
+  5. `CommercialBridge-PCA` (if ENABLE_PCA=true, ~$400/month)
+  6. `CommercialBridge-RolesAnywhere` (if ENABLE_ROLES_ANYWHERE=true)
 
 **Note**: You'll be prompted to approve IAM role creation. Review and approve the changes.
 
@@ -78,7 +82,7 @@ After deployment, retrieve the API key value:
 ```bash
 # Get the API key ID from CloudFormation outputs
 aws cloudformation describe-stacks \
-  --stack-name ApiGatewayStack \
+  --stack-name CommercialBridge-ApiGateway \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiKeyId`].OutputValue' \
   --output text \
   --profile commercial
@@ -99,7 +103,7 @@ Store the API URL and API key in AWS Secrets Manager in your GovCloud account:
 ```bash
 # Get the API URL from CloudFormation outputs
 aws cloudformation describe-stacks \
-  --stack-name ApiGatewayStack \
+  --stack-name CommercialBridge-ApiGateway \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
   --output text \
   --profile commercial
@@ -239,6 +243,7 @@ These limits can be adjusted in `infrastructure/lib/api-gateway-stack.ts`.
 - API Gateway logs: `/aws/apigateway/CommercialBridgeApi`
 - Cost Info Lambda logs: `/aws/lambda/CostInfoFunction`
 - Create GovCloud Account Lambda logs: `/aws/lambda/CreateGovCloudAccountFunction`
+- Accept Invitation Lambda logs: `/aws/lambda/AcceptInvitationFunction`
 
 ### CloudWatch Metrics
 
@@ -257,7 +262,11 @@ To remove all resources:
 npm run cdk:destroy
 ```
 
-This will delete all three stacks in reverse dependency order.
+This will delete all deployed stacks in reverse dependency order. From the repository root, you can also use:
+
+```bash
+npm run commercial:destroy
+```
 
 ## Troubleshooting
 
