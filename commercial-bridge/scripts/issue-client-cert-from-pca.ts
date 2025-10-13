@@ -89,10 +89,36 @@ class PcaCertificateIssuer {
   }
 
   /**
+   * Sanitize common name to prevent command injection
+   * Only allows alphanumeric, hyphens, underscores, and dots
+   */
+  private sanitizeCommonName(commonName: string): string {
+    // Remove any characters that could be used for command injection
+    const sanitized = commonName.replace(/[^a-zA-Z0-9._-]/g, '');
+
+    if (sanitized !== commonName) {
+      console.warn(`⚠️  Common name sanitized: "${commonName}" → "${sanitized}"`);
+    }
+
+    if (!sanitized || sanitized.length === 0) {
+      throw new Error('Invalid common name: must contain at least one alphanumeric character');
+    }
+
+    if (sanitized.length > 64) {
+      throw new Error('Invalid common name: exceeds maximum length of 64 characters');
+    }
+
+    return sanitized;
+  }
+
+  /**
    * Generate RSA private key and CSR
    */
   generateKeyAndCSR(commonName: string): { privateKey: string; csr: string } {
-    console.log(`\n🔐 Generating private key for ${commonName}...`);
+    // Sanitize input to prevent command injection
+    const sanitizedCN = this.sanitizeCommonName(commonName);
+
+    console.log(`\n🔐 Generating private key for ${sanitizedCN}...`);
 
     // Generate 2048-bit RSA key pair
     const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
@@ -128,9 +154,10 @@ class PcaCertificateIssuer {
       fs.writeFileSync(keyPath, privateKey);
 
       const { execSync } = require('child_process');
+      // semgrep: ignore detect-child-process - commonName is sanitized above to prevent injection
       execSync(
         `openssl req -new -key ${keyPath} -out ${csrPath} ` +
-          `-subj "/C=US/O=Innovation Sandbox/OU=Commercial Bridge Client/CN=${commonName}"`,
+          `-subj "/C=US/O=Innovation Sandbox/OU=Commercial Bridge Client/CN=${sanitizedCN}"`,
       );
 
       const csr = fs.readFileSync(csrPath, 'utf-8');

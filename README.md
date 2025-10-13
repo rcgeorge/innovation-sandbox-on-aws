@@ -33,6 +33,7 @@ page.
   - [Cost Scaling](#cost-scaling)
   - [File Structure](#file-structure)
   - [Pre-Commit](#pre-commit)
+  - [Secret Scanning Configuration](#secret-scanning-configuration)
   - [Collection of Operational Metrics](#collection-of-operational-metrics)
   - [License](#license)
   - [Contact Information](#contact-information)
@@ -909,7 +910,9 @@ root
 │   ├── lambdas                         # lambda function runtime code, contains multiple lambdas each of which is its own package
 │   └── layers                          # lambda layers, contains multiple layers each of which is its own package
 ├── .env.example                    # template for environment variables
+├── .gitleaks.toml                  # GitLeaks secret scanner configuration
 ├── .pre-commit-config.yaml         # pre-commit hook configurations
+├── .secretsignore                  # secret scanner ignore patterns (TruffleHog, detect-secrets, etc.)
 └── package.json                    # top level npm package.json file with scripts to serve as orchestrated monorepo commands
 ```
 
@@ -938,6 +941,26 @@ pre-commit run --all-files
 ```
 
 For more information on pre-commit, refer to the official documentation [here](https://pre-commit.com/).
+
+## Secret Scanning Configuration
+
+The repository includes configuration files to prevent false positives from secret scanning tools:
+
+- **`.gitleaks.toml`** - Configuration for GitLeaks scanner
+  - Excludes test files (`*.test.ts`, `__snapshots__/`)
+  - Ignores test fixtures with `TEST-*`, `MOCK-*` prefixes
+  - Allows placeholder values (example.com, 000000000000)
+
+- **`.secretsignore`** - Pattern-based ignore file for multiple scanners
+  - Compatible with TruffleHog, detect-secrets, and other tools
+  - Excludes test files, documentation, build artifacts
+
+**Test files use clearly marked mock values:**
+- Test tokens: `TEST-TOKEN-00000000-0000-0000-0000-000000000000`
+- Mock passwords: `MOCK-PASSWORD-FOR-TESTING-ONLY-1234`
+- Inline ignore comments: `// gitleaks:allow` for specific lines
+
+If your organization uses a different secret scanner, you may need to add similar configuration or ignore patterns.
 
 ## Collection of Operational Metrics
 

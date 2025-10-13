@@ -52,5 +52,8 @@
     "vite": "^6.3.5",
     "vite-plugin-markdown": "^2.2.0"
   },
+  "overrides": {
+    "brace-expansion": "^2.0.1"
+  },
   "license": "Apache-2.0"
 }

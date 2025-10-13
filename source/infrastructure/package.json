@@ -16,8 +16,11 @@
     "@aws-solutions-constructs/aws-eventbridge-lambda": "^2.85.0",
     "@aws-solutions-constructs/aws-eventbridge-sqs": "^2.85.0",
     "@aws-solutions-constructs/aws-sqs-lambda": "^2.85.0",
-    "aws-cdk": "^2.1014.0",
-    "aws-cdk-lib": "^2.195.0",
+    "aws-cdk": "^2.1030.0",
+    "aws-cdk-lib": "^2.219.0",
     "constructs": "^10.3.0"
+  },
+  "overrides": {
+    "brace-expansion": "^2.0.1"
   }
 }

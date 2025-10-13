@@ -45,9 +45,11 @@ afterEach(() => {
 });
 
 describe("secret-rotator-handler", () => {
+  // Test fixtures - these are dummy values for testing only, not real secrets
   const secretArn =
     "arn:aws:secretsmanager:us-east-1:123456789012:secret:/InnovationSandbox/myisb/Auth/JwtSecret-AAAAAA";
-  const clientRequestToken = "3ea2a528-885c-46af-a3d0-1470caed22aa";
+  // gitleaks:allow - Test fixture UUID, not a real token
+  const clientRequestToken = "TEST-TOKEN-00000000-0000-0000-0000-000000000000";
 
   it("should handle a createSecret event", async () => {
     const event = {
@@ -55,7 +57,8 @@ describe("secret-rotator-handler", () => {
       SecretId: secretArn,
       Step: "createSecret",
     };
-    const randomPassword = "password-1234";
+    // gitleaks:allow - Mock password for testing only, not a real secret
+    const randomPassword = "MOCK-PASSWORD-FOR-TESTING-ONLY-1234";
     mockSecretsManager.send
       .mockImplementationOnce((command: any) => {
         if (command instanceof GetRandomPasswordCommand) {

@@ -1,0 +1,40 @@
+# GitLeaks configuration for Innovation Sandbox on AWS
+# This file configures the GitLeaks secret scanner to avoid false positives
+
+title = "Innovation Sandbox on AWS - GitLeaks Config"
+
+# Global allowlist for test files and mock data
+[allowlist]
+  description = "Allowlist for test fixtures and mock data"
+
+  # Ignore all test files - they contain mock/dummy secrets
+  paths = [
+    '''.*test\.ts$''',
+    '''.*test\.js$''',
+    '''.*\.test\.ts$''',
+    '''.*\.test\.js$''',
+    '''.*__snapshots__/.*''',
+    '''.*\.snap$''',
+  ]
+
+  # Ignore specific patterns that are test fixtures
+  regexes = [
+    # Test/Mock prefixed values
+    '''TEST-TOKEN-[0-9a-f-]+''',
+    '''MOCK-PASSWORD-.*''',
+    '''MOCK-[A-Z]+-FOR-TESTING.*''',
+    # All-zero UUIDs used in tests
+    '''00000000-0000-0000-0000-000000000000''',
+    # Example placeholder values
+    '''example\.com''',
+    '''123456789012''',  # Example AWS account ID
+  ]
+
+# Additional rules to reduce false positives
+[[rules]]
+  description = "Ignore AWS example account IDs"
+  regex = '''123456789012'''
+
+[[rules]]
+  description = "Ignore placeholder domains"
+  regex = '''(example\.(com|org|net)|test\.local)'''

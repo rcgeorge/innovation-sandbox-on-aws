@@ -59,6 +59,9 @@
     "source/common",
     "source/e2e"
   ],
+  "overrides": {
+    "brace-expansion": "^2.0.1"
+  },
   "devDependencies": {
     "@anatine/zod-mock": "^3.13.4",
     "@aws-sdk/client-accessanalyzer": "^3.687.0",
