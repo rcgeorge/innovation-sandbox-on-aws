@@ -8,7 +8,10 @@
  *
  * Usage:
  *   npm run configure
- *   npm run configure -- --profile my-govcloud-profile
+ *   npm run configure govcloud                      (recommended - no npm warnings)
+ *   npm run configure -- --profile govcloud          (alternative - with double dash)
+ *
+ * Note: Do NOT use 'npm run configure --profile' (without --) as npm will show warnings
  */
 
 const inquirer = require('inquirer');
@@ -1745,6 +1748,11 @@ async function main() {
 
             if (useCodeBuild) {
               try {
+                // Build frontend first (required for CDK synthesis)
+                console.log('\n📦 Building frontend (required for CDK synthesis)...');
+                execSync('npm run --workspace @amzn/innovation-sandbox-frontend build', { stdio: 'inherit' });
+                console.log('✅ Frontend built');
+
                 console.log('\n🔨 Deploying CodeBuild stack...');
                 execSync('npm run deploy:codebuild', { stdio: 'inherit' });
                 console.log('\n✅ CodeBuild stack deployed');
@@ -2025,6 +2033,11 @@ async function verifyAndDeployECR() {
       }
 
       if (useCodeBuildForImages) {
+        // Build frontend first (required for CDK synthesis)
+        console.log('\n📦 Building frontend (required for CDK synthesis)...');
+        execSync('npm run --workspace @amzn/innovation-sandbox-frontend build', { stdio: 'inherit' });
+        console.log('✅ Frontend built');
+
         console.log('\n🔨 Deploying CodeBuild stack...');
         execSync('npm run deploy:codebuild', { stdio: 'inherit' });
         console.log('\n🚀 Triggering CodeBuild to build account cleaner image...');

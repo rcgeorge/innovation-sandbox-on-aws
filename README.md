@@ -140,17 +140,17 @@ npm run configure
 **For GovCloud or non-default profiles**, specify the AWS profile to use for auto-detection:
 
 ```shell
-# IMPORTANT: Use double dash (--) before --profile to pass it to the script
-npm run configure -- --profile govcloud
-
-# Alternative: Just pass the profile name directly
+# RECOMMENDED: Just pass the profile name directly (no warnings)
 npm run configure govcloud
+
+# Alternative: Use double dash (--) before --profile
+npm run configure -- --profile govcloud
 
 # With equals syntax
 npm run configure -- --profile=my-aws-profile
 ```
 
-**Common mistake:** Running `npm run configure --profile govcloud` (single dash) won't work because npm interprets the flag itself. Always use `npm run configure -- --profile govcloud` or `npm run configure govcloud`.
+**Common mistake:** Running `npm run configure --profile govcloud` (without double dash) will show npm warnings about unknown config but will still work. To avoid warnings, use `npm run configure govcloud` (no dashes).
 
 The wizard will use the specified profile to auto-detect your AWS environment (account ID, region, IAM Identity Center, etc.).
 
