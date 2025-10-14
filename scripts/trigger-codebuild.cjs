@@ -25,6 +25,20 @@ const {
   CloudFormationClient,
   DescribeStacksCommand,
 } = require("@aws-sdk/client-cloudformation");
+const {
+  ECRClient,
+  DescribeRepositoriesCommand,
+  CreateRepositoryCommand,
+} = require("@aws-sdk/client-ecr");
+const { execSync } = require("child_process");
+const path = require("path");
+const fs = require("fs");
+
+// Load .env file
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  require('dotenv').config({ path: envPath });
+}
 
 // Configuration for different project types
 const PROJECT_CONFIG = {
@@ -32,13 +46,63 @@ const PROJECT_CONFIG = {
     stackName: "InnovationSandbox-CodeBuild",
     outputKey: "NukeCodeBuildProjectName",
     description: "AWS Nuke container",
+    ecrRepoEnvVar: "PRIVATE_ECR_REPO",
   },
   frontend: {
     stackName: "InnovationSandbox-CodeBuild",
     outputKey: "FrontendCodeBuildProjectName",
     description: "Frontend container",
+    ecrRepoEnvVar: "PRIVATE_ECR_FRONTEND_REPO",
   },
 };
+
+/**
+ * Ensure ECR repository exists, create if it doesn't
+ */
+async function ensureEcrRepository(repoName, region) {
+  if (!repoName) {
+    console.log('⚠️  No ECR repository name configured - skipping ECR creation');
+    return;
+  }
+
+  console.log(`\nChecking if ECR repository "${repoName}" exists in ${region}...`);
+
+  const ecr = new ECRClient({ region });
+
+  try {
+    // Check if repository exists
+    await ecr.send(
+      new DescribeRepositoriesCommand({
+        repositoryNames: [repoName],
+      })
+    );
+
+    console.log(`✓ ECR repository "${repoName}" already exists`);
+  } catch (error) {
+    if (error.name === 'RepositoryNotFoundException') {
+      // Repository doesn't exist, create it
+      console.log(`Creating ECR repository "${repoName}" in ${region}...`);
+
+      try {
+        await ecr.send(
+          new CreateRepositoryCommand({
+            repositoryName: repoName,
+            imageScanningConfiguration: {
+              scanOnPush: true,
+            },
+          })
+        );
+
+        console.log(`✓ ECR repository "${repoName}" created successfully`);
+      } catch (createError) {
+        console.error(`❌ Failed to create ECR repository: ${createError.message}`);
+        throw createError;
+      }
+    } else {
+      throw error;
+    }
+  }
+}
 
 /**
  * Get CloudFormation stack output value
@@ -75,22 +139,113 @@ async function getStackOutput(stackName, outputKey) {
 }
 
 /**
+ * Upload source code to S3 for CodeBuild
+ */
+async function uploadSourceToS3(projectType) {
+  const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+  const archiver = require('archiver');
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+
+  console.log(`\n📦 Preparing source code for ${projectType}...`);
+
+  // Create zip of repository
+  const repoRoot = path.join(__dirname, '..');
+  const tempDir = os.tmpdir();
+  const zipPath = path.join(tempDir, `innovation-sandbox-source-${Date.now()}.zip`);
+
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(zipPath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    output.on('close', async () => {
+      console.log(`✓ Created source archive (${(archive.pointer() / 1024 / 1024).toFixed(2)} MB)`);
+
+      try {
+        // Get account and region from environment
+        const account = process.env.CDK_DEFAULT_ACCOUNT || process.env.HUB_ACCOUNT_ID;
+        const region = process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || process.env.PRIVATE_ECR_REPO_REGION || 'us-gov-east-1';
+
+        if (!account || !region) {
+          throw new Error(`Cannot determine AWS account (${account}) or region (${region}) from environment`);
+        }
+
+        // Upload to S3 (CDK bootstrap bucket)
+        const bucketName = `cdk-hnb659fds-assets-${account}-${region}`;
+        const key = `codebuild-source/${path.basename(zipPath)}`;
+
+        console.log(`📤 Uploading to s3://${bucketName}/${key}...`);
+
+        const s3 = new S3Client({ region });
+        await s3.send(new PutObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+          Body: fs.readFileSync(zipPath),
+        }));
+
+        console.log('✓ Source uploaded successfully');
+
+        // Cleanup
+        fs.unlinkSync(zipPath);
+
+        // Return S3 location in format: bucketname/key
+        resolve(`${bucketName}/${key}`);
+      } catch (error) {
+        fs.unlinkSync(zipPath);
+        reject(error);
+      }
+    });
+
+    archive.on('error', reject);
+    archive.pipe(output);
+
+    // Add all source files except node_modules, .git, etc.
+    archive.glob('**/*', {
+      cwd: repoRoot,
+      ignore: [
+        'node_modules/**',
+        '**/node_modules/**',
+        '.git/**',
+        '.build/**',
+        'cdk.out/**',
+        '**/cdk.out/**',
+        'dist/**',
+        '**/dist/**',
+        '.env',
+        '.claude/**',
+      ],
+    });
+
+    archive.finalize();
+  });
+}
+
+/**
  * Start a CodeBuild build
  */
-async function startBuild(projectName, description) {
+async function startBuild(projectName, description, sourceLocation) {
   const codebuild = new CodeBuildClient({});
 
   console.log(`\n🚀 Starting build for ${description}...`);
   console.log(`   Project: ${projectName}`);
+  if (sourceLocation) {
+    console.log(`   Source: s3://${sourceLocation}`);
+  }
 
   try {
-    const response = await codebuild.send(
-      new StartBuildCommand({
-        projectName: projectName,
-        // Note: If using NO_SOURCE, you would need to provide sourceLocationOverride
-        // For GitHub source, CodeBuild pulls automatically
-      })
-    );
+    const buildCommand = {
+      projectName: projectName,
+    };
+
+    // Provide source location override for S3 source
+    if (sourceLocation) {
+      buildCommand.sourceLocationOverride = sourceLocation;
+      buildCommand.sourceTypeOverride = 'S3';
+      buildCommand.sourceVersion = ''; // Empty version for S3 (not using versioning)
+    }
+
+    const response = await codebuild.send(new StartBuildCommand(buildCommand));
 
     const buildId = response.build?.id;
     const buildNumber = response.build?.buildNumber;
@@ -185,6 +340,28 @@ async function triggerBuilds(projectType, wait = false) {
 
   const buildIds = [];
 
+  // Ensure ECR repositories exist before starting builds
+  const ecrRegion = process.env.PRIVATE_ECR_REPO_REGION || process.env.AWS_REGION || 'us-east-1';
+
+  for (const type of projectTypes) {
+    const config = PROJECT_CONFIG[type];
+    const repoName = process.env[config.ecrRepoEnvVar];
+
+    if (repoName) {
+      try {
+        await ensureEcrRepository(repoName, ecrRegion);
+      } catch (error) {
+        console.error(`\n❌ Failed to ensure ECR repository for ${config.description}`);
+        console.error(`   ${error.message}`);
+        process.exit(1);
+      }
+    }
+  }
+
+  // Upload source code once (reused for all builds)
+  console.log('\n📦 Preparing source code for CodeBuild...');
+  const sourceLocation = await uploadSourceToS3('all');
+
   // Start all builds
   for (const type of projectTypes) {
     const config = PROJECT_CONFIG[type];
@@ -199,7 +376,7 @@ async function triggerBuilds(projectType, wait = false) {
       console.log(`\n🔍 Getting CodeBuild project name for ${config.description}...`);
       const projectName = await getStackOutput(config.stackName, config.outputKey);
 
-      const buildId = await startBuild(projectName, config.description);
+      const buildId = await startBuild(projectName, config.description, sourceLocation);
       buildIds.push({ buildId, description: config.description });
     } catch (error) {
       console.error(`\n❌ Error processing ${config.description}:`);

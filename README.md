@@ -405,56 +405,60 @@ This deploys the following stacks to your commercial AWS account:
 - `CommercialBridge-PCA` - AWS Private CA for certificate management (~$400/month, set `ENABLE_PCA=true`)
 - `CommercialBridge-RolesAnywhere` - IAM Roles Anywhere for cert-based auth (set `ENABLE_ROLES_ANYWHERE=true`)
 
-**Step 2: Deploy GovCloud Stacks (GovCloud Account)**
+**Step 2: Deploy Core GovCloud Stacks**
 
-If using AWS profiles, these commands automatically use `AWS_GOVCLOUD_PROFILE` from `.env`:
+Deploy core stacks (NOT Container yet):
 
 ```shell
 npm run deploy:account-pool
 npm run deploy:idc
 npm run deploy:data
-npm run deploy:container  # Creates ECR repositories for you
 ```
 
-**Step 3: Build and Push Container Images (After Container Stack Deployed)**
+**Step 3: Build and Push Container Images**
 
-The Container stack creates empty ECR repositories. You must build and push images to them:
+Build images BEFORE deploying Container stack. These commands automatically create ECR repositories AND push images:
 
 ```shell
 # Option A: Using Docker locally
-npm run docker:build-and-push
-npm run docker:frontend:build-and-push
+npm run docker:build-and-push          # Creates myisb-account-cleaner repo + builds + pushes
+npm run docker:frontend:build-and-push  # Creates myisb-frontend repo + builds + pushes
 
 # Option B: Using AWS CodeBuild (no Docker required)
-npm run deploy:codebuild
-npm run codebuild:nuke
-npm run codebuild:frontend
+npm run deploy:codebuild   # Deploy CodeBuild stack first
+npm run codebuild:nuke     # Creates repo + builds + pushes account cleaner
+npm run codebuild:frontend # Creates repo + builds + pushes frontend
 ```
 
-**Step 4: Update Container Stack (To use new images)**
+**Step 4: Deploy Container Stack**
 
-After images are pushed, update the ECS services:
+After images are built and pushed, deploy the Container stack:
 
 ```shell
-npm run deploy:container  # Redeploy to pull new images
+npm run deploy:container  # References existing ECR repos with images
 ```
 
-Or explicitly specify a profile:
+Or with explicit profile:
 
 ```shell
 npm run deploy:account-pool -- --profile govcloud
 npm run deploy:idc -- --profile govcloud
 npm run deploy:data -- --profile govcloud
-npm run deploy:container -- --profile govcloud  # Creates ECR repos
-# ... build and push images ...
-npm run deploy:container -- --profile govcloud  # Update to use images
+
+# Build images (creates ECR repos)
+npm run docker:build-and-push
+npm run docker:frontend:build-and-push
+
+# Deploy Container stack (uses images)
+npm run deploy:container -- --profile govcloud
 ```
 
 The container stack (`InnovationSandbox-Container`) deploys:
-- **ECR repositories** for account cleaner and frontend images (auto-created)
-- **ECS Fargate** for frontend hosting (replaces CloudFront which is unavailable in GovCloud)
-- **Application Load Balancer** for ingress
-- **Account cleaner ECS tasks** (same as compute stack)
+- **VPC** with public and private subnets
+- **ECS Fargate cluster** for running containers
+- **Application Load Balancer** for ingress (HTTP or HTTPS)
+- **Account cleaner ECS tasks** referencing ECR images
+- **Frontend ECS service** referencing ECR images
 - All backend Lambda functions and APIs (same as compute stack)
 
 > **Note:** The container stack is required for GovCloud. For commercial regions, use the standard compute stack which uses CloudFront for better performance and lower cost.

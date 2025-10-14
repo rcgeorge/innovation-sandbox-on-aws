@@ -1623,46 +1623,52 @@ function printDeploymentInstructions(answers, isGovCloud, currentRegion) {
     step++;
   }
 
-  // ECR repository setup (optional - only if using private ECR)
-  console.log(`STEP ${step}: Build Container Images (Optional - if using private ECR)`);
-  console.log('─'.repeat(60));
-  console.log('If you configured PRIVATE_ECR_REPO in .env, build images:\n');
-  console.log('Account Cleaner Image - Choose ONE option:\n');
-  console.log('  Option A: Local Docker Build');
-  console.log('    npm run docker:build-and-push\n');
-  console.log('  Option B: AWS CodeBuild (No Docker required)');
-  console.log('    npm run deploy:codebuild');
-  console.log('    npm run codebuild:nuke\n');
-  console.log('Frontend Image (if using Container stack):\n');
-  console.log('  Option A: Local Docker Build');
-  console.log('    npm run docker:frontend:build-and-push\n');
-  console.log('  Option B: AWS CodeBuild (No Docker required)');
-  console.log('    npm run deploy:codebuild  # If not already deployed');
-  console.log('    npm run codebuild:frontend\n');
-  step++;
-
-  // Main deployment
-  console.log(`STEP ${step}: Bootstrap and Deploy Innovation Sandbox`);
+  // Main deployment - Bootstrap and core stacks
+  console.log(`STEP ${step}: Bootstrap and Deploy Core Stacks`);
   console.log('─'.repeat(60));
   console.log('# Bootstrap CDK');
   console.log('npm run bootstrap\n');
 
-  if (answers.DEPLOYMENT_TYPE === 'single') {
-    console.log('# Deploy all stacks (single account)');
-    console.log('npm run deploy:all\n');
-  } else {
-    console.log('# Deploy stacks individually (multi-account)');
-    console.log('# Switch AWS credentials/profiles as needed for each account\n');
-    console.log('npm run deploy:account-pool  # Org Management Account');
-    console.log('npm run deploy:idc           # IDC Account');
-    console.log('npm run deploy:data          # Hub Account');
-    if (answers.CONFIGURE_CONTAINER_STACK) {
-      console.log('npm run deploy:container     # Hub Account\n');
-    } else {
-      console.log('npm run deploy:compute       # Hub Account\n');
-    }
-  }
+  console.log('# Deploy core stacks');
+  console.log('npm run deploy:account-pool  # Org Management Account');
+  console.log('npm run deploy:idc           # IDC Account');
+  console.log('npm run deploy:data          # Hub Account\n');
   step++;
+
+  // For GovCloud: Build images BEFORE Container stack
+  if (isGovCloud) {
+    console.log(`STEP ${step}: Build and Push Container Images`);
+    console.log('─'.repeat(60));
+    console.log('Build images BEFORE deploying Container stack.');
+    console.log('These commands create ECR repositories AND push images.\n');
+    console.log('Account Cleaner Image - Choose ONE option:\n');
+    console.log('  Option A: Local Docker Build');
+    console.log('    npm run docker:build-and-push');
+    console.log('    (Creates myisb-account-cleaner repo + builds + pushes)\n');
+    console.log('  Option B: AWS CodeBuild (No Docker required)');
+    console.log('    npm run deploy:codebuild  # Deploys CodeBuild stack');
+    console.log('    npm run codebuild:nuke');
+    console.log('    (Creates repo + triggers CodeBuild + pushes)\n');
+    console.log('Frontend Image:\n');
+    console.log('  Option A: Local Docker Build');
+    console.log('    npm run docker:frontend:build-and-push');
+    console.log('    (Creates myisb-frontend repo + builds + pushes)\n');
+    console.log('  Option B: AWS CodeBuild (No Docker required)');
+    console.log('    npm run codebuild:frontend');
+    console.log('    (Creates repo + triggers CodeBuild + pushes)\n');
+    step++;
+
+    console.log(`STEP ${step}: Deploy Container Stack`);
+    console.log('─'.repeat(60));
+    console.log('After images are built, deploy Container stack:');
+    console.log('npm run deploy:container\n');
+    step++;
+  } else {
+    console.log(`STEP ${step}: Deploy Compute Stack`);
+    console.log('─'.repeat(60));
+    console.log('npm run deploy:compute\n');
+    step++;
+  }
 
   // Post-deployment
   console.log(`STEP ${step}: Post-Deployment (Optional)`);

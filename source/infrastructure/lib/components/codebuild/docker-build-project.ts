@@ -103,8 +103,12 @@ export class DockerBuildProject extends Construct {
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
-    // Extract ECR registry URL (everything before the repository name)
-    const ecrRegistryUrl = props.ecrRepository.repositoryUri.split('/')[0];
+    // Construct ECR registry URL from account and region
+    // Format: {account}.dkr.ecr.{region}.amazonaws.com
+    const account = props.ecrRepository.env.account;
+    const region = props.ecrRepository.env.region;
+    const partition = region?.includes('gov') ? 'amazonaws.com' : 'amazonaws.com'; // Same for both now
+    const ecrRegistryUrl = `${account}.dkr.ecr.${region}.${partition}`;
 
     // Create CodeBuild project
     this.project = new codebuild.Project(this, 'Project', {
@@ -125,7 +129,7 @@ export class DockerBuildProject extends Construct {
       // Configure environment variables for Docker build
       environmentVariables: {
         AWS_DEFAULT_REGION: {
-          value: props.ecrRepository.env.region,
+          value: region,
         },
         ECR_REGISTRY: {
           value: ecrRegistryUrl,
@@ -152,6 +156,9 @@ export class DockerBuildProject extends Construct {
 
     // Grant ECR permissions to CodeBuild
     this.grantEcrPermissions(props.ecrRepository);
+
+    // Grant S3 permissions for source code access (CDK bootstrap bucket)
+    this.grantS3SourcePermissions();
   }
 
   /**
@@ -167,6 +174,28 @@ export class DockerBuildProject extends Construct {
         effect: iam.Effect.ALLOW,
         actions: ['ecr:GetAuthorizationToken'],
         resources: ['*'],
+      })
+    );
+  }
+
+  /**
+   * Grant S3 permissions to access source code from CDK bootstrap bucket
+   */
+  private grantS3SourcePermissions(): void {
+    // Grant permissions to read source code from CDK assets bucket
+    this.project.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          's3:GetObject',
+          's3:GetObjectVersion',
+          's3:ListBucket',
+          's3:ListBucketVersions',
+        ],
+        resources: [
+          `arn:aws-us-gov:s3:::cdk-hnb659fds-assets-*`,  // Bootstrap bucket pattern
+          `arn:aws-us-gov:s3:::cdk-hnb659fds-assets-*/*`, // Objects in bucket
+        ],
       })
     );
   }

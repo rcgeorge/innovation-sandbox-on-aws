@@ -22,9 +22,10 @@
  * - Source code available in GitHub or as local zip
  */
 
-import { CfnOutput, Duration, Stack, StackProps } from "aws-cdk-lib";
+import { CfnOutput, Stack, StackProps } from "aws-cdk-lib";
 import * as codebuild from "aws-cdk-lib/aws-codebuild";
 import * as ecr from "aws-cdk-lib/aws-ecr";
+import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
 
 import { DockerBuildProject } from "@amzn/innovation-sandbox-infrastructure/components/codebuild/docker-build-project";
@@ -33,7 +34,7 @@ import { NamespaceParam } from "@amzn/innovation-sandbox-infrastructure/helpers/
 import { applyIsbTag } from "@amzn/innovation-sandbox-infrastructure/helpers/tagging-helper";
 
 export class IsbCodeBuildStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, _props?: StackProps) {
     super(scope, id);
 
     // Namespace parameter (required for all stacks)
@@ -68,27 +69,6 @@ export class IsbCodeBuildStack extends Stack {
       }
     );
 
-    // GitHub source configuration (optional)
-    const gitHubOwner = new ParameterWithLabel(this, "GitHubOwner", {
-      label: "GitHub Repository Owner (Optional)",
-      description:
-        "GitHub organization or username. Leave empty to use local source uploads.",
-      default: "",
-    });
-
-    const gitHubRepo = new ParameterWithLabel(this, "GitHubRepo", {
-      label: "GitHub Repository Name (Optional)",
-      description:
-        "GitHub repository name. Leave empty to use local source uploads.",
-      default: "",
-    });
-
-    const gitHubBranch = new ParameterWithLabel(this, "GitHubBranch", {
-      label: "GitHub Branch (Optional)",
-      description: "Branch to build from when using GitHub source",
-      default: "main",
-    });
-
     // Apply tagging
     applyIsbTag(this, namespaceParam.namespace.valueAsString);
 
@@ -121,16 +101,20 @@ export class IsbCodeBuildStack extends Stack {
       }
     );
 
-    // Use NO_SOURCE configuration by default
-    // This means source code must be provided when triggering builds via the trigger script
-    // Users can modify this stack to use GitHub source if they have a repository
-    const nukeSource = codebuild.Source.gitHub({
-      owner: "awslabs",
-      repo: "innovation-sandbox-on-aws",
-      branchOrRef: "main",
+    // Use S3 source configuration with sourceLocationOverride provided at build time
+    // The trigger script will upload source code to S3 and provide the location when starting builds
+    const sourceBucket = s3.Bucket.fromBucketName(
+      this,
+      'SourceBucket',
+      `cdk-hnb659fds-assets-${this.account}-${this.region}`
+    );
+
+    const nukeSource = codebuild.Source.s3({
+      bucket: sourceBucket,
+      path: 'codebuild-source/placeholder.zip', // Will be overridden at build time
     });
 
-    const frontendSource = nukeSource; // Same source for both
+    const frontendSource = nukeSource; // Same source configuration for both
 
     // Create CodeBuild project for AWS Nuke container
     const nukeCodeBuild = new DockerBuildProject(this, "NukeCodeBuild", {

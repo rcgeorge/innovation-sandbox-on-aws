@@ -14,8 +14,7 @@
  * - Auto-scaling based on CPU/memory utilization
  */
 
-import { Duration } from "aws-cdk-lib";
-import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import { Duration, RemovalPolicy } from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
@@ -47,6 +46,7 @@ export class EcsFrontend extends Construct {
     const logGroup = new logs.LogGroup(this, "LogGroup", {
       logGroupName: `/aws/ecs/${props.namespace}-frontend`,
       retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Create Application Load Balancer
@@ -101,7 +101,7 @@ export class EcsFrontend extends Construct {
     const containerImage = ecs.ContainerImage.fromEcrRepository(props.ecrRepository, "latest");
 
     // Add container to task definition
-    const container = this.taskDefinition.addContainer("FrontendContainer", {
+    this.taskDefinition.addContainer("FrontendContainer", {
       image: containerImage,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "frontend",

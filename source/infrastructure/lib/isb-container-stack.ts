@@ -16,7 +16,7 @@
  * - CloudWatch logs for monitoring
  */
 
-import { CfnCondition, CfnOutput, Fn, RemovalPolicy, Stack, StackProps } from "aws-cdk-lib";
+import { CfnOutput, Stack, StackProps } from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
@@ -125,62 +125,31 @@ export class IsbContainerStack extends Stack {
       },
     ]);
 
-    // Create ECR repositories if repository names are provided
-    // Account Cleaner ECR Repository
+    // Reference existing ECR repositories (created by docker/codebuild scripts before deployment)
+    // NOTE: ECR repos must exist before deploying this stack
+    // Run: npm run docker:build-and-push or npm run codebuild:nuke (which creates repos automatically)
     let accountCleanerRepo: ecr.IRepository | undefined;
     if (privateEcrRepo.valueAsString && privateEcrRepo.valueAsString !== "") {
-      accountCleanerRepo = new ecr.Repository(this, "AccountCleanerEcrRepo", {
-        repositoryName: privateEcrRepo.valueAsString,
-        imageScanOnPush: true,
-        lifecycleRules: [
-          {
-            maxImageCount: 10, // Keep last 10 images
-            description: "Retain last 10 images",
-          },
-        ],
-        removalPolicy: RemovalPolicy.RETAIN, // Don't delete repo on stack deletion
-      });
-
-      new CfnOutput(this, "AccountCleanerEcrRepoUri", {
-        value: accountCleanerRepo.repositoryUri,
-        description: "Account Cleaner ECR Repository URI",
-      });
+      accountCleanerRepo = ecr.Repository.fromRepositoryName(
+        this,
+        "AccountCleanerEcrRepo",
+        privateEcrRepo.valueAsString
+      );
     }
 
     // Frontend ECR Repository (conditional)
     let frontendRepo: ecr.IRepository | undefined;
     if (privateEcrFrontendRepo.valueAsString && privateEcrFrontendRepo.valueAsString !== "") {
-      frontendRepo = new ecr.Repository(this, "FrontendEcrRepo", {
-        repositoryName: privateEcrFrontendRepo.valueAsString,
-        imageScanOnPush: true,
-        lifecycleRules: [
-          {
-            maxImageCount: 10, // Keep last 10 images
-            description: "Retain last 10 images",
-          },
-        ],
-        removalPolicy: RemovalPolicy.RETAIN, // Don't delete repo on stack deletion
-      });
-
-      new CfnOutput(this, "FrontendEcrRepoUri", {
-        value: frontendRepo.repositoryUri,
-        description: "Frontend ECR Repository URI",
-      });
+      frontendRepo = ecr.Repository.fromRepositoryName(
+        this,
+        "FrontendEcrRepo",
+        privateEcrFrontendRepo.valueAsString
+      );
     }
 
-    // CloudFormation Conditions
-    const deployFrontendCondition = new CfnCondition(this, "DeployFrontendCondition", {
-      expression: Fn.conditionNot(Fn.conditionEquals(privateEcrFrontendRepo.valueAsString, "")),
-    });
-
-    const hasCertificateCondition = new CfnCondition(this, "HasCertificateCondition", {
-      expression: Fn.conditionNot(Fn.conditionEquals(certificateArn.valueAsString, "")),
-    });
-
     // Deploy Account Cleaner ECS Service
-    let accountCleaner: EcsAccountCleaner | undefined;
     if (privateEcrRepo.valueAsString && accountCleanerRepo) {
-      accountCleaner = new EcsAccountCleaner(this, "AccountCleaner", {
+      new EcsAccountCleaner(this, "AccountCleaner", {
         namespace: namespaceParam.namespace.valueAsString,
         vpc: vpc,
         cluster: cluster,
@@ -191,9 +160,8 @@ export class IsbContainerStack extends Stack {
     }
 
     // Deploy Frontend ECS Service (conditional)
-    let frontend: EcsFrontend | undefined;
     if (privateEcrFrontendRepo.valueAsString && restApiUrl.valueAsString && frontendRepo) {
-      frontend = new EcsFrontend(this, "Frontend", {
+      const frontend = new EcsFrontend(this, "Frontend", {
         namespace: namespaceParam.namespace.valueAsString,
         vpc: vpc,
         cluster: cluster,

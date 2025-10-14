@@ -15,7 +15,7 @@
  * - CloudWatch logging for audit and debugging
  */
 
-import { Duration } from "aws-cdk-lib";
+import { RemovalPolicy } from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
@@ -43,6 +43,7 @@ export class EcsAccountCleaner extends Construct {
     const logGroup = new logs.LogGroup(this, "LogGroup", {
       logGroupName: `/aws/ecs/${props.namespace}-account-cleaner`,
       retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Create ECS Task Definition
@@ -61,7 +62,7 @@ export class EcsAccountCleaner extends Construct {
     );
 
     // Add IAM permissions for assuming roles in sandbox accounts
-    this.taskDefinition.taskRole.addToPolicy(
+    this.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ["sts:AssumeRole"],
         resources: ["*"], // Will be scoped to sandbox account roles
@@ -72,7 +73,7 @@ export class EcsAccountCleaner extends Construct {
     const containerImage = ecs.ContainerImage.fromEcrRepository(props.ecrRepository, "latest");
 
     // Add container to task definition
-    const container = this.taskDefinition.addContainer("AccountCleanerContainer", {
+    this.taskDefinition.addContainer("AccountCleanerContainer", {
       image: containerImage,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "account-cleaner",
