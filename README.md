@@ -369,89 +369,153 @@ npm run deploy:data -- --profile hub-account
 npm run deploy:compute -- --profile hub-account
 ```
 
-**For GovCloud Deployments:**
+**For GovCloud Deployments (Complete Step-by-Step Guide):**
 
 GovCloud deployments require additional infrastructure in a commercial AWS account to access commercial-only APIs (Cost Explorer, Organizations CreateGovCloudAccount).
 
-> **Prerequisites:** Configure AWS CLI profiles for both commercial and GovCloud accounts. See [AWS Credentials Configuration](#aws-credentials-configuration) for setup instructions.
+> **Prerequisites:** Complete all [Deployment Prerequisites](#deployment-prerequisites) and configure AWS CLI profiles for both commercial and GovCloud accounts.
 
-Follow this deployment order:
+#### Step-by-Step GovCloud Deployment
 
-**Step 1: Deploy Commercial Bridge (Commercial AWS Account)**
-
-If using AWS profiles, these commands automatically use `AWS_COMMERCIAL_PROFILE` from `.env`:
+**Step 1: Configure Your Environment**
 
 ```shell
+# Install dependencies
+npm install
+
+# Run configuration wizard with GovCloud profile
+npm run configure govcloud
+```
+
+The wizard will:
+- Auto-detect your GovCloud environment
+- Prompt for AWS profile names (GovCloud and Commercial)
+- Ask about Roles Anywhere and PCA (recommends PCA for production)
+- Save all configuration to `.env` file
+- Print deployment commands in correct order
+
+**Step 2: Deploy Commercial Bridge (Commercial AWS Account)**
+
+```shell
+# Delete stale CDK output (important!)
+rm -r commercial-bridge/infrastructure/cdk.out
+
+# Install dependencies
 npm run commercial:install
+
+# Bootstrap CDK in commercial account
 npm run commercial:bootstrap
+
+# Deploy Commercial Bridge stacks
 npm run commercial:deploy
+# Deploys: CostInfo, AccountCreation, AcceptInvitation, ApiGateway
+# If PCA enabled: Also deploys PCA and RolesAnywhere stacks
 ```
 
-Or explicitly specify a profile:
+**Step 3: Issue Certificates and Extract Outputs (If using PCA + Roles Anywhere)**
 
 ```shell
-npm run commercial:install -- --profile commercial
-npm run commercial:bootstrap -- --profile commercial
-npm run commercial:deploy -- --profile commercial
+# Issue client certificates from PCA and store in GovCloud Secrets Manager
+npm run commercial:pca:issue-and-update-secret
+
+# Extract all Commercial Bridge outputs and update .env automatically
+npm run commercial:extract-outputs
 ```
 
-This deploys the following stacks to your commercial AWS account:
-- `CommercialBridge-CostInfo` - Lambda for querying Cost Explorer
-- `CommercialBridge-AccountCreation` - Lambda for creating GovCloud accounts
-- `CommercialBridge-AcceptInvitation` - Lambda for accepting org invitations
-- `CommercialBridge-ApiGateway` - REST API with usage plans and API key
+This automatically updates your `.env` with:
+- `COMMERCIAL_BRIDGE_API_URL`
+- `COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN`
+- `COMMERCIAL_BRIDGE_PROFILE_ARN`
+- `COMMERCIAL_BRIDGE_ROLE_ARN`
+- `COMMERCIAL_BRIDGE_PCA_ARN`
+- `COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN` (queries GovCloud Secrets Manager)
 
-**Optional Commercial Bridge Stacks:**
-- `CommercialBridge-PCA` - AWS Private CA for certificate management (~$400/month, set `ENABLE_PCA=true`)
-- `CommercialBridge-RolesAnywhere` - IAM Roles Anywhere for cert-based auth (set `ENABLE_ROLES_ANYWHERE=true`)
+> **Important**: The `extract-outputs` command now automatically retrieves the client certificate secret ARN from GovCloud Secrets Manager. No manual copy-paste needed!
 
-**Step 2: Deploy Core GovCloud Stacks**
-
-Deploy core stacks (NOT Container yet):
+**Step 4: Bootstrap and Deploy Core GovCloud Stacks**
 
 ```shell
-npm run deploy:account-pool
-npm run deploy:idc
-npm run deploy:data
+# Bootstrap CDK in GovCloud
+npm run bootstrap
+
+# Deploy core infrastructure stacks
+npm run deploy:account-pool  # Creates Organization OUs and SCPs
+npm run deploy:idc           # Configures IAM Identity Center groups
+npm run deploy:data          # Creates DynamoDB tables and AppConfig
 ```
 
-**Step 3: Build and Push Container Images**
-
-Build images BEFORE deploying Container stack. These commands automatically create ECR repositories AND push images:
+**Step 5: Deploy Compute Stack (Creates REST API)**
 
 ```shell
-# Option A: Using Docker locally
+npm run deploy:compute
+```
+
+This creates:
+- REST API Gateway
+- All backend Lambda functions
+- EventBridge rules, Step Functions
+- CloudWatch logs and metrics
+- **Note**: CloudFront will fail in GovCloud (expected - use Container stack for frontend)
+
+**Step 6: Extract REST API URL**
+
+```shell
+# Automatically updates .env with REST_API_URL
+npm run extract-compute-outputs
+```
+
+**Step 7: Build and Push Container Images**
+
+Now build Docker images (CodeBuild automatically creates ECR repositories):
+
+```shell
+# Deploy CodeBuild stack
+npm run deploy:codebuild
+
+# Build and push both images (creates ECR repos + builds + pushes)
+npm run codebuild:build-and-push
+
+# Or build separately:
+npm run codebuild:nuke      # Account cleaner image
+npm run codebuild:frontend  # Frontend image
+```
+
+**Alternative - Using Docker locally** (if you have Docker installed):
+```shell
 npm run docker:build-and-push          # Creates myisb-account-cleaner repo + builds + pushes
-npm run docker:frontend:build-and-push  # Creates myisb-frontend repo + builds + pushes
-
-# Option B: Using AWS CodeBuild (no Docker required)
-npm run deploy:codebuild   # Deploy CodeBuild stack first
-npm run codebuild:nuke     # Creates repo + builds + pushes account cleaner
-npm run codebuild:frontend # Creates repo + builds + pushes frontend
+npm run docker:frontend:build-and-push # Creates myisb-frontend repo + builds + pushes
 ```
 
-**Step 4: Deploy Container Stack**
+**Step 8: Deploy Container Stack**
 
-After images are built and pushed, deploy the Container stack:
+After images are built, deploy the Container stack (frontend + ECS):
 
 ```shell
-npm run deploy:container  # References existing ECR repos with images
+npm run deploy:container
 ```
 
-Or with explicit profile:
+This creates:
+- VPC, ECS Fargate cluster
+- Application Load Balancer (ALB)
+- Frontend ECS service (NGINX + React) that proxies to REST API
+- Account Cleaner ECS tasks
+
+**Step 9: Post-Deployment (Optional)**
 
 ```shell
-npm run deploy:account-pool -- --profile govcloud
-npm run deploy:idc -- --profile govcloud
-npm run deploy:data -- --profile govcloud
-
-# Build images (creates ECR repos)
-npm run docker:build-and-push
-npm run docker:frontend:build-and-push
-
-# Deploy Container stack (uses images)
-npm run deploy:container -- --profile govcloud
+npm run deploy:post-deployment
 ```
+
+**Step 10: Access Your Deployment**
+
+Get the frontend URL from Container stack outputs:
+
+```shell
+aws cloudformation describe-stacks --stack-name InnovationSandbox-Container \
+  --query 'Stacks[0].Outputs[?OutputKey==`FrontendUrl`].OutputValue' --output text
+```
+
+Open this URL in your browser to access the Innovation Sandbox web interface!
 
 The container stack (`InnovationSandbox-Container`) deploys:
 - **VPC** with public and private subnets

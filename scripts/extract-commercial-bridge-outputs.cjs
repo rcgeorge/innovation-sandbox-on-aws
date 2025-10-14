@@ -19,6 +19,12 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// Load .env to get GovCloud configuration
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  require('dotenv').config({ path: envPath });
+}
+
 // Parse --profile argument
 const args = process.argv.slice(2);
 const profileArg = args.find(arg => arg.startsWith('--profile'));
@@ -39,8 +45,6 @@ console.log('\n==============================================');
 console.log('Extract Commercial Bridge Outputs');
 console.log('==============================================\n');
 console.log(`Using AWS profile: ${profile}\n`);
-
-const envPath = path.join(__dirname, '..', '.env');
 
 if (!fs.existsSync(envPath)) {
   console.error('❌ .env file not found. Run "npm run configure" first.\n');
@@ -104,6 +108,33 @@ if (pcaArn) {
   console.log(`  ✓ PCA ARN: ${pcaArn}`);
 } else {
   console.log('  ⚠️  PCA stack not found (optional stack not deployed)');
+}
+
+// Client Certificate Secret in GovCloud (optional - only if using Roles Anywhere with PCA)
+console.log('\nChecking GovCloud Secrets Manager for client certificate...');
+const govcloudRegion = process.env.GOVCLOUD_REGION || 'us-gov-east-1';
+const govcloudProfile = process.env.AWS_GOVCLOUD_PROFILE || 'default';
+const secretName = process.env.GOVCLOUD_SECRET_NAME || '/InnovationSandbox/CommercialBridge/ClientCert';
+
+try {
+  // Use JSON output and parse to avoid escaping issues
+  const secretInfo = execSync(
+    `aws secretsmanager describe-secret --secret-id "${secretName}" --region ${govcloudRegion} --profile ${govcloudProfile} --output json`,
+    { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+  ).trim();
+
+  if (secretInfo) {
+    const secret = JSON.parse(secretInfo);
+    if (secret.ARN) {
+      outputs.COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN = secret.ARN;
+      console.log(`  ✓ Client Cert Secret ARN: ${secret.ARN}`);
+    }
+  } else {
+    console.log('  ⚠️  Client certificate secret not found (run: npm run commercial:pca:issue-and-update-secret)');
+  }
+} catch (error) {
+  console.log('  ⚠️  Client certificate secret not found or not accessible');
+  console.log(`     (Secret: ${secretName}, Region: ${govcloudRegion})`);
 }
 
 // Check if we found any outputs

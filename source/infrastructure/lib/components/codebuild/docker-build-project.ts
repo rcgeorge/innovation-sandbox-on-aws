@@ -105,10 +105,10 @@ export class DockerBuildProject extends Construct {
 
     // Construct ECR registry URL from account and region
     // Format: {account}.dkr.ecr.{region}.amazonaws.com
+    // Note: ECR uses amazonaws.com domain for both commercial and GovCloud
     const account = props.ecrRepository.env.account;
     const region = props.ecrRepository.env.region;
-    const partition = region?.includes('gov') ? 'amazonaws.com' : 'amazonaws.com'; // Same for both now
-    const ecrRegistryUrl = `${account}.dkr.ecr.${region}.${partition}`;
+    const ecrRegistryUrl = `${account}.dkr.ecr.${region}.amazonaws.com`;
 
     // Create CodeBuild project
     this.project = new codebuild.Project(this, 'Project', {

@@ -47,6 +47,7 @@ interface AccountCleanerProps {
   orgMgtAccountId: string;
   idcAccountId: string;
   useStableTaggingCondition: CfnCondition;
+  isGovCloud?: boolean;
 }
 
 export class AccountCleaner extends Construct {
@@ -268,6 +269,7 @@ export class AccountCleaner extends Construct {
       initializeCleanupLambda: initializeCleanupLambda.lambdaFunction,
       codeBuildCleanupProject: codeBuildCleanupProject,
       stepFunctionTimeOutInMinutes: STEPFUNCTION_TIMEOUT_MINUTES,
+      isGovCloud: props.isGovCloud,
     });
   }
 }

@@ -39,6 +39,7 @@ interface AccountCleanerStepFunctionProps {
   codeBuildCleanupProject: Project;
   eventBus: EventBus;
   stepFunctionTimeOutInMinutes: number;
+  isGovCloud?: boolean;
 }
 
 export class AccountCleanerStepFunction extends Construct {
@@ -359,7 +360,7 @@ export class AccountCleanerStepFunction extends Construct {
       ],
     });
 
-    new Rule(this, "AccountCleanupRule", {
+    const cleanupRule = new Rule(this, "AccountCleanupRule", {
       eventBus,
       description:
         "EventBus rule that triggers the ISB account cleanup process",
@@ -368,5 +369,12 @@ export class AccountCleanerStepFunction extends Construct {
         detailType: [EventDetailTypes.CleanAccountRequest],
       },
     });
+
+    // GovCloud doesn't support Tags on EventBridge Rules
+    // Remove Tags property at CloudFormation level
+    if (props.isGovCloud) {
+      const cfnRule = cleanupRule.node.defaultChild as any;
+      cfnRule.addPropertyDeletionOverride('Tags');
+    }
   }
 }

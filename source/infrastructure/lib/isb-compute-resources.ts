@@ -88,6 +88,7 @@ export class IsbComputeResources {
       orgMgtAccountId: props.orgMgtAccountId,
       idcAccountId: props.idcAccountId,
       useStableTaggingCondition: props.useStableTaggingCondition,
+      isGovCloud: props.isGovCloud,
     });
 
     const restApi = new RestApi(scope, "IsbRestApi", {
