@@ -1071,6 +1071,28 @@ async function main() {
   },
   {
     type: 'input',
+    name: 'AWS_GOVCLOUD_PROFILE',
+    message: 'AWS CLI profile name for GovCloud account (leave empty to use default credentials):',
+    when: () => isGovCloud,
+    default: configuredProfile || existingEnv.AWS_GOVCLOUD_PROFILE || 'default',
+    validate: (input) => {
+      // Optional field - allow empty
+      return true;
+    }
+  },
+  {
+    type: 'input',
+    name: 'AWS_COMMERCIAL_PROFILE',
+    message: 'AWS CLI profile name for Commercial account (for Commercial Bridge):',
+    when: () => isGovCloud,
+    default: existingEnv.AWS_COMMERCIAL_PROFILE || 'commercial',
+    validate: (input) => {
+      // Optional field - allow empty
+      return true;
+    }
+  },
+  {
+    type: 'input',
     name: 'IDC_REGION',
     message: 'AWS Region where IAM Identity Center is configured:',
     when: () => !identityCenter.identityStoreId, // Only ask if IDC was not auto-detected
@@ -1374,71 +1396,57 @@ async function main() {
     default: existingEnv.ACCEPT_SOLUTION_TERMS_OF_USE === 'Accept'
   },
   {
-    type: 'confirm',
-    name: 'CONFIGURE_CONTAINER_STACK',
-    message: 'Do you want to configure the Container stack? (For GovCloud or ECS-based frontend deployment)',
-    default: !!(existingEnv.REST_API_URL || isGovCloud),
-    when: () => {
-      // Only ask if Container stack values are missing
-      const hasContainerConfig = !!(existingEnv.ALLOWED_IP_RANGES && existingEnv.VPC_CIDR);
-      return !hasContainerConfig;
-    }
-  },
-  {
     type: 'input',
-    name: 'REST_API_URL',
-    message: 'REST API URL from Compute stack (leave empty if not deployed yet):',
-    when: (answers) => answers.CONFIGURE_CONTAINER_STACK,
-    default: async (answers) => {
-      if (existingEnv.REST_API_URL) return existingEnv.REST_API_URL;
-
-      // Only try to auto-detect if Compute stack might be deployed
-      // (silently check without showing messages)
-      try {
-        const stackOutputs = await getComputeStackOutputs(answers.NAMESPACE);
-        if (stackOutputs.restApiUrl) {
-          return stackOutputs.restApiUrl;
-        }
-      } catch (error) {
-        // Silently fail - stack not deployed yet
-      }
-
-      return ''; // Empty default if not deployed
-    }
-  },
-  {
-    type: 'input',
-    name: 'ALLOWED_IP_RANGES',
-    message: 'Allowed IP ranges for Container stack ALB (comma-separated CIDR blocks):',
-    when: (answers) => answers.CONFIGURE_CONTAINER_STACK,
-    default: existingEnv.ALLOWED_IP_RANGES || '0.0.0.0/0',
+    name: 'VPC_CIDR',
+    message: 'VPC CIDR block for Container stack:',
+    when: () => isGovCloud, // Always ask for GovCloud (Container stack required)
+    default: existingEnv.VPC_CIDR || '10.0.0.0/16',
     validate: (input) => {
       if (!input || input.trim() === '') {
-        return 'At least one IP range is required';
+        return 'VPC CIDR is required for Container stack';
       }
-      const ranges = input.split(',').map(r => r.trim());
-      const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$/;
-      for (const range of ranges) {
-        if (!cidrRegex.test(range)) {
-          return `Invalid CIDR block: ${range}`;
-        }
+      // Must match the pattern in Container stack
+      const cidrRegex = /^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([1][6-9]|[2][0-8]))$/;
+      if (!cidrRegex.test(input)) {
+        return 'Invalid CIDR block format (must be /16 to /28). Example: 10.0.0.0/16';
       }
       return true;
     }
   },
   {
     type: 'input',
-    name: 'VPC_CIDR',
-    message: 'VPC CIDR block for Container stack:',
-    when: (answers) => answers.CONFIGURE_CONTAINER_STACK,
-    default: existingEnv.VPC_CIDR || '10.0.0.0/16',
+    name: 'ALLOWED_IP_RANGES',
+    message: 'Allowed IP range for Container stack ALB (single CIDR block):',
+    when: () => isGovCloud,
+    default: existingEnv.ALLOWED_IP_RANGES || '0.0.0.0/0',
     validate: (input) => {
       if (!input || input.trim() === '') {
-        return 'VPC CIDR is required';
+        return 'IP range is required';
       }
       const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$/;
       if (!cidrRegex.test(input)) {
-        return 'Invalid CIDR block format';
+        return 'Invalid CIDR block format. Example: 0.0.0.0/0 or 10.0.0.0/8';
+      }
+      return true;
+    }
+  },
+  {
+    type: 'input',
+    name: 'REST_API_URL',
+    message: 'REST API URL from Compute stack (leave empty - will be set after Data stack deploys):',
+    when: () => isGovCloud,
+    default: existingEnv.REST_API_URL || '',
+  },
+  {
+    type: 'input',
+    name: 'CERTIFICATE_ARN',
+    message: 'ACM Certificate ARN for HTTPS on ALB (leave empty for HTTP only):',
+    when: () => isGovCloud,
+    default: existingEnv.CERTIFICATE_ARN || '',
+    validate: (input) => {
+      // Optional - can be empty
+      if (input && !input.match(/^arn:aws(-us-gov)?:acm:[a-z0-9-]+:\d{12}:certificate\/.+$/)) {
+        return 'Invalid ACM certificate ARN format';
       }
       return true;
     }
@@ -1471,6 +1479,16 @@ async function main() {
     envContent = envContent.replace(/^(# )?IS_GOVCLOUD=.*/m,
       `IS_GOVCLOUD="${isGovCloud ? 'true' : 'false'}"`);
 
+    // Set AWS profile names (GovCloud only)
+    if (isGovCloud) {
+      if (answers.AWS_GOVCLOUD_PROFILE) {
+        envContent = envContent.replace(/^(# )?AWS_GOVCLOUD_PROFILE=.*/m, `AWS_GOVCLOUD_PROFILE="${answers.AWS_GOVCLOUD_PROFILE}"`);
+      }
+      if (answers.AWS_COMMERCIAL_PROFILE) {
+        envContent = envContent.replace(/^(# )?AWS_COMMERCIAL_PROFILE=.*/m, `AWS_COMMERCIAL_PROFILE="${answers.AWS_COMMERCIAL_PROFILE}"`);
+      }
+    }
+
     envContent = envContent.replace(/^HUB_ACCOUNT_ID=.*/m, `HUB_ACCOUNT_ID=${hubAccountId}`);
     envContent = envContent.replace(/^NAMESPACE=.*/m, `NAMESPACE="${answers.NAMESPACE}"`);
     envContent = envContent.replace(/^PARENT_OU_ID=.*/m, `PARENT_OU_ID="${answers.PARENT_OU_ID}"`);
@@ -1501,16 +1519,19 @@ async function main() {
       envContent = envContent.replace(/^# NUKE_CONFIG_FILE_PATH=.*/m, `NUKE_CONFIG_FILE_PATH="${answers.NUKE_CONFIG_FILE_PATH}"`);
     }
 
-    // Handle Container stack configuration
-    if (answers.CONFIGURE_CONTAINER_STACK) {
-      if (answers.REST_API_URL) {
-        envContent = envContent.replace(/^# REST_API_URL=.*/m, `REST_API_URL="${answers.REST_API_URL}"`);
+    // Handle Container stack configuration (for GovCloud)
+    if (isGovCloud) {
+      if (answers.VPC_CIDR) {
+        envContent = envContent.replace(/^# VPC_CIDR=.*/m, `VPC_CIDR="${answers.VPC_CIDR}"`);
       }
       if (answers.ALLOWED_IP_RANGES) {
         envContent = envContent.replace(/^# ALLOWED_IP_RANGES=.*/m, `ALLOWED_IP_RANGES="${answers.ALLOWED_IP_RANGES}"`);
       }
-      if (answers.VPC_CIDR) {
-        envContent = envContent.replace(/^# VPC_CIDR=.*/m, `VPC_CIDR="${answers.VPC_CIDR}"`);
+      if (answers.REST_API_URL !== undefined) {
+        envContent = envContent.replace(/^# REST_API_URL=.*/m, `REST_API_URL="${answers.REST_API_URL}"`);
+      }
+      if (answers.CERTIFICATE_ARN !== undefined) {
+        envContent = envContent.replace(/^# CERTIFICATE_ARN=.*/m, `CERTIFICATE_ARN="${answers.CERTIFICATE_ARN}"`);
       }
     }
 
@@ -1577,6 +1598,11 @@ function printDeploymentInstructions(answers, isGovCloud, currentRegion) {
   if (isGovCloud && answers.ENABLE_ROLES_ANYWHERE) {
     console.log(`STEP ${step}: Deploy Commercial Bridge (Commercial AWS Account)`);
     console.log('─'.repeat(60));
+    if (answers.AWS_COMMERCIAL_PROFILE) {
+      console.log(`Using profile: ${answers.AWS_COMMERCIAL_PROFILE}\n`);
+    }
+    console.log('# IMPORTANT: Delete stale CDK output first');
+    console.log('rm -r commercial-bridge/infrastructure/cdk.out\n');
     console.log('npm run commercial:install');
     console.log('npm run commercial:bootstrap\n');
 
@@ -1592,10 +1618,8 @@ function printDeploymentInstructions(answers, isGovCloud, currentRegion) {
       console.log('\n⚠️  PCA costs ~$400/month');
     }
 
-    console.log('\n📋 After deployment, extract ARNs and add to .env:');
-    console.log('   COMMERCIAL_BRIDGE_API_URL, COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN,');
-    console.log('   COMMERCIAL_BRIDGE_PROFILE_ARN, COMMERCIAL_BRIDGE_ROLE_ARN,');
-    console.log('   COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN\n');
+    console.log('\n# Extract outputs and update .env automatically');
+    console.log('npm run commercial:extract-outputs\n');
     step++;
   }
 
@@ -1657,13 +1681,31 @@ function printDeploymentInstructions(answers, isGovCloud, currentRegion) {
     console.log('  npm run deploy:data -- --profile hub-account\n');
   }
 
-  if (process.env.AWS_PROFILE) {
+  if (isGovCloud && (answers.AWS_GOVCLOUD_PROFILE || answers.AWS_COMMERCIAL_PROFILE)) {
+    console.log('Configured AWS Profiles:');
+    if (answers.AWS_GOVCLOUD_PROFILE) {
+      console.log(`  GovCloud deployments → ${answers.AWS_GOVCLOUD_PROFILE}`);
+    }
+    if (answers.AWS_COMMERCIAL_PROFILE) {
+      console.log(`  Commercial Bridge → ${answers.AWS_COMMERCIAL_PROFILE}`);
+    }
+    console.log('Commands will automatically use the correct profile.\n');
+  } else if (process.env.AWS_PROFILE) {
     console.log(`Using profile '${process.env.AWS_PROFILE}' for deployments.`);
     console.log('Commands will automatically use this profile via AWS_PROFILE env var.\n');
   }
 
   console.log('Review your .env file before deploying:');
   console.log('  cat .env\n');
+
+  console.log('⚠️  IMPORTANT:');
+  console.log('  Before deploying Commercial Bridge:');
+  console.log('    rm -r commercial-bridge/infrastructure/cdk.out');
+  console.log('    (Deletes stale CDK synthesis - ensures correct account/region)');
+  console.log('');
+  console.log('  After deploying Commercial Bridge:');
+  console.log('    npm run commercial:extract-outputs');
+  console.log('    (Automatically updates .env with API URLs and ARNs)\n');
 
   console.log('For help:');
   console.log('  See README.md or the implementation guide\n');

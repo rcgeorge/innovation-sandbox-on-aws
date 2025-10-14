@@ -16,8 +16,9 @@
  * - CloudWatch logs for monitoring
  */
 
-import { CfnCondition, CfnOutput, Fn, Stack, StackProps } from "aws-cdk-lib";
+import { CfnCondition, CfnOutput, Fn, RemovalPolicy, Stack, StackProps } from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import { Construct } from "constructs";
 
@@ -37,21 +38,21 @@ export class IsbContainerStack extends Stack {
     // ECR Configuration Parameters
     const privateEcrRepo = new ParameterWithLabel(this, "PrivateEcrRepo", {
       label: "Private ECR Repository for Account Cleaner",
-      description: "The name of the private ECR repository containing the account cleaner image",
-      default: "",
+      description: "The name of the private ECR repository for account cleaner image",
+      default: "account-cleaner",  // Simple default, users typically set via PRIVATE_ECR_REPO in .env
     });
 
     const privateEcrRepoRegion = new ParameterWithLabel(this, "PrivateEcrRepoRegion", {
       label: "Private ECR Repository Region",
       description: "The AWS region where the private ECR repositories are located",
-      default: "us-east-1",
+      default: "us-gov-east-1",  // Common GovCloud default
       allowedPattern: "^[a-z]{2}(-gov)?(-[a-z]+-\\d{1})$",
     });
 
     const privateEcrFrontendRepo = new ParameterWithLabel(this, "PrivateEcrFrontendRepo", {
-      label: "Private ECR Repository for Frontend (Optional)",
-      description: "The name of the private ECR repository containing the frontend image. Leave empty to skip frontend deployment.",
-      default: "",
+      label: "Private ECR Repository for Frontend",
+      description: "The name of the private ECR repository for frontend image",
+      default: "frontend",  // Simple default, users typically set via PRIVATE_ECR_FRONTEND_REPO in .env
     });
 
     // VPC Configuration Parameters
@@ -71,8 +72,8 @@ export class IsbContainerStack extends Stack {
 
     const restApiUrl = new ParameterWithLabel(this, "RestApiUrl", {
       label: "REST API URL",
-      description: "The URL of the backend REST API (from Compute stack)",
-      default: "",
+      description: "The URL of the backend REST API (from Compute stack). Can be set after deployment via stack update.",
+      default: "PLACEHOLDER",  // Will be updated after Data/Compute stacks deploy
     });
 
     const certificateArn = new ParameterWithLabel(this, "CertificateArn", {
@@ -124,18 +125,66 @@ export class IsbContainerStack extends Stack {
       },
     ]);
 
-    // Conditionally create frontend based on whether ECR repo is provided
+    // Create ECR repositories if repository names are provided
+    // Account Cleaner ECR Repository
+    let accountCleanerRepo: ecr.IRepository | undefined;
+    if (privateEcrRepo.valueAsString && privateEcrRepo.valueAsString !== "") {
+      accountCleanerRepo = new ecr.Repository(this, "AccountCleanerEcrRepo", {
+        repositoryName: privateEcrRepo.valueAsString,
+        imageScanOnPush: true,
+        lifecycleRules: [
+          {
+            maxImageCount: 10, // Keep last 10 images
+            description: "Retain last 10 images",
+          },
+        ],
+        removalPolicy: RemovalPolicy.RETAIN, // Don't delete repo on stack deletion
+      });
+
+      new CfnOutput(this, "AccountCleanerEcrRepoUri", {
+        value: accountCleanerRepo.repositoryUri,
+        description: "Account Cleaner ECR Repository URI",
+      });
+    }
+
+    // Frontend ECR Repository (conditional)
+    let frontendRepo: ecr.IRepository | undefined;
+    if (privateEcrFrontendRepo.valueAsString && privateEcrFrontendRepo.valueAsString !== "") {
+      frontendRepo = new ecr.Repository(this, "FrontendEcrRepo", {
+        repositoryName: privateEcrFrontendRepo.valueAsString,
+        imageScanOnPush: true,
+        lifecycleRules: [
+          {
+            maxImageCount: 10, // Keep last 10 images
+            description: "Retain last 10 images",
+          },
+        ],
+        removalPolicy: RemovalPolicy.RETAIN, // Don't delete repo on stack deletion
+      });
+
+      new CfnOutput(this, "FrontendEcrRepoUri", {
+        value: frontendRepo.repositoryUri,
+        description: "Frontend ECR Repository URI",
+      });
+    }
+
+    // CloudFormation Conditions
     const deployFrontendCondition = new CfnCondition(this, "DeployFrontendCondition", {
       expression: Fn.conditionNot(Fn.conditionEquals(privateEcrFrontendRepo.valueAsString, "")),
     });
 
+    const hasCertificateCondition = new CfnCondition(this, "HasCertificateCondition", {
+      expression: Fn.conditionNot(Fn.conditionEquals(certificateArn.valueAsString, "")),
+    });
+
     // Deploy Account Cleaner ECS Service
     let accountCleaner: EcsAccountCleaner | undefined;
-    if (privateEcrRepo.valueAsString) {
+    if (privateEcrRepo.valueAsString && accountCleanerRepo) {
       accountCleaner = new EcsAccountCleaner(this, "AccountCleaner", {
         namespace: namespaceParam.namespace.valueAsString,
         vpc: vpc,
         cluster: cluster,
+        ecrRepository: accountCleanerRepo,
         privateEcrRepo: privateEcrRepo.valueAsString,
         privateEcrRepoRegion: privateEcrRepoRegion.valueAsString,
       });
@@ -143,11 +192,12 @@ export class IsbContainerStack extends Stack {
 
     // Deploy Frontend ECS Service (conditional)
     let frontend: EcsFrontend | undefined;
-    if (privateEcrFrontendRepo.valueAsString && restApiUrl.valueAsString) {
+    if (privateEcrFrontendRepo.valueAsString && restApiUrl.valueAsString && frontendRepo) {
       frontend = new EcsFrontend(this, "Frontend", {
         namespace: namespaceParam.namespace.valueAsString,
         vpc: vpc,
         cluster: cluster,
+        ecrRepository: frontendRepo,
         privateEcrFrontendRepo: privateEcrFrontendRepo.valueAsString,
         privateEcrRepoRegion: privateEcrRepoRegion.valueAsString,
         restApiUrl: restApiUrl.valueAsString,

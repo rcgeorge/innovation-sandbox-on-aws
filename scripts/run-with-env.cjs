@@ -61,7 +61,8 @@ function setCDKEnvironmentFromProfile(profileName) {
       if (match) {
         console.log(`[DEBUG] Found profile section for ${profileName}`);
         const profileSection = match[2];
-        const regionMatch = profileSection.match(/region\s*=\s*([^\s\n]+)/);
+        console.log(`[DEBUG] Profile section content: "${profileSection.substring(0, 200)}"`);
+        const regionMatch = profileSection.match(/region\s*=\s*([^\s\n\r]+)/);
         if (regionMatch) {
           const region = regionMatch[1].trim();
           process.env.CDK_DEFAULT_REGION = region;
@@ -71,6 +72,7 @@ function setCDKEnvironmentFromProfile(profileName) {
           return;
         } else {
           console.log(`[DEBUG] No region found in profile section`);
+          console.log(`[DEBUG] Tried regex: /region\\s*=\\s*([^\\s\\n\\r]+)/`);
         }
       } else {
         console.log(`[DEBUG] Profile section not found in config file`);

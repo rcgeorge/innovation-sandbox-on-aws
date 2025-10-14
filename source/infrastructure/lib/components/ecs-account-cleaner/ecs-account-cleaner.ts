@@ -26,8 +26,9 @@ import { Construct } from "constructs";
 export interface EcsAccountCleanerProps {
   readonly namespace: string;
   readonly vpc: ec2.IVpc;
-  readonly privateEcrRepo?: string;
-  readonly privateEcrRepoRegion?: string;
+  readonly ecrRepository: ecr.IRepository; // ECR repository (created by stack)
+  readonly privateEcrRepo?: string; // For compatibility
+  readonly privateEcrRepoRegion?: string; // For compatibility
   readonly cluster: ecs.ICluster;
 }
 
@@ -67,24 +68,8 @@ export class EcsAccountCleaner extends Construct {
       })
     );
 
-    // Determine container image location
-    let containerImage: ecs.ContainerImage;
-
-    if (props.privateEcrRepo) {
-      // Use private ECR repository
-      const repository = ecr.Repository.fromRepositoryName(
-        this,
-        "PrivateEcrRepo",
-        props.privateEcrRepo
-      );
-      containerImage = ecs.ContainerImage.fromEcrRepository(repository, "latest");
-    } else {
-      // Fallback to public ECR (if available) or build from source
-      throw new Error(
-        "Private ECR repository is required for ECS account cleaner. " +
-        "Please specify PRIVATE_ECR_REPO in your configuration."
-      );
-    }
+    // Get container image from ECR repository (created by Container stack)
+    const containerImage = ecs.ContainerImage.fromEcrRepository(props.ecrRepository, "latest");
 
     // Add container to task definition
     const container = this.taskDefinition.addContainer("AccountCleanerContainer", {

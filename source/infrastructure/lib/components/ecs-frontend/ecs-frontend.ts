@@ -26,8 +26,9 @@ import { Construct } from "constructs";
 export interface EcsFrontendProps {
   readonly namespace: string;
   readonly vpc: ec2.IVpc;
-  readonly privateEcrFrontendRepo?: string;
-  readonly privateEcrRepoRegion?: string;
+  readonly ecrRepository: ecr.IRepository; // ECR repository (created by stack)
+  readonly privateEcrFrontendRepo?: string; // For compatibility
+  readonly privateEcrRepoRegion?: string; // For compatibility
   readonly restApiUrl: string;
   readonly cluster: ecs.ICluster;
   readonly allowedCidr?: string; // Single CIDR for simplicity with CloudFormation parameters
@@ -41,13 +42,6 @@ export class EcsFrontend extends Construct {
 
   constructor(scope: Construct, id: string, props: EcsFrontendProps) {
     super(scope, id);
-
-    if (!props.privateEcrFrontendRepo) {
-      throw new Error(
-        "Private ECR repository is required for ECS frontend deployment. " +
-        "Please specify PRIVATE_ECR_FRONTEND_REPO in your configuration."
-      );
-    }
 
     // Create CloudWatch Log Group
     const logGroup = new logs.LogGroup(this, "LogGroup", {
@@ -103,13 +97,8 @@ export class EcsFrontend extends Construct {
       },
     });
 
-    // Get container image from private ECR
-    const repository = ecr.Repository.fromRepositoryName(
-      this,
-      "PrivateEcrRepo",
-      props.privateEcrFrontendRepo
-    );
-    const containerImage = ecs.ContainerImage.fromEcrRepository(repository, "latest");
+    // Get container image from ECR repository (created by Container stack)
+    const containerImage = ecs.ContainerImage.fromEcrRepository(props.ecrRepository, "latest");
 
     // Add container to task definition
     const container = this.taskDefinition.addContainer("FrontendContainer", {
@@ -180,7 +169,15 @@ export class EcsFrontend extends Construct {
       deregistrationDelay: Duration.seconds(30),
     });
 
-    // Configure listeners based on certificate availability
+    // Configure HTTP listener only for now (simplified to avoid CloudFormation parameter issues)
+    // TODO: Add HTTPS support via CloudFormation conditions
+    this.loadBalancer.addListener("HttpListener", {
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      defaultTargetGroups: [targetGroup],
+    });
+
+    /* Disabled HTTPS support for now - requires CloudFormation conditions for proper parameter handling
     if (props.certificateArn && props.certificateArn.trim() !== "") {
       // HTTPS listener with ACM certificate
       const certificate = acm.Certificate.fromCertificateArn(
@@ -214,6 +211,7 @@ export class EcsFrontend extends Construct {
         defaultTargetGroups: [targetGroup],
       });
     }
+    */
 
     // Enable auto-scaling
     const scaling = this.service.autoScaleTaskCount({

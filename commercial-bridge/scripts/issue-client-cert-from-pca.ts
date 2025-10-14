@@ -34,9 +34,9 @@ import {
 } from '@aws-sdk/client-secrets-manager';
 import { CloudFormationClient, DescribeStacksCommand } from '@aws-sdk/client-cloudformation';
 import { fromIni } from '@aws-sdk/credential-providers';
+import * as x509 from '@peculiar/x509';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 
 interface CertificateData {
@@ -63,7 +63,7 @@ class PcaCertificateIssuer {
   async getPcaArn(): Promise<string> {
     try {
       const response = await this.cfnClient.send(
-        new DescribeStacksCommand({ StackName: 'PcaStack' }),
+        new DescribeStacksCommand({ StackName: 'CommercialBridge-PCA' }),
       );
 
       const stack = response.Stacks?.[0];
@@ -71,7 +71,7 @@ class PcaCertificateIssuer {
 
       if (!pcaArnOutput?.OutputValue) {
         throw new Error(
-          'PCA ARN not found in stack outputs. Ensure PcaStack is deployed with ENABLE_PCA=true',
+          'PCA ARN not found in stack outputs. Ensure CommercialBridge-PCA is deployed with ENABLE_PCA=true',
         );
       }
 
@@ -79,8 +79,8 @@ class PcaCertificateIssuer {
     } catch (error: any) {
       if (error.name === 'ValidationError') {
         throw new Error(
-          'PcaStack not found. Deploy it first:\n' +
-            '  export ENABLE_PCA=true\n' +
+          'CommercialBridge-PCA stack not found. Deploy it first:\n' +
+            '  Set ENABLE_PCA=true in .env\n' +
             '  npm run commercial:deploy',
         );
       }
@@ -112,9 +112,9 @@ class PcaCertificateIssuer {
   }
 
   /**
-   * Generate RSA private key and CSR
+   * Generate RSA private key and CSR using pure Node.js (no OpenSSL required)
    */
-  generateKeyAndCSR(commonName: string): { privateKey: string; csr: string } {
+  async generateKeyAndCSR(commonName: string): Promise<{ privateKey: string; csr: string }> {
     // Sanitize input to prevent command injection
     const sanitizedCN = this.sanitizeCommonName(commonName);
 
@@ -135,40 +135,48 @@ class PcaCertificateIssuer {
 
     console.log('✅ Private key generated');
 
-    // Create CSR
+    // Create CSR using @peculiar/x509 (cross-platform, no OpenSSL needed)
     console.log('📝 Generating Certificate Signing Request (CSR)...');
 
-    const csrSubject = [
-      { name: 'commonName', value: commonName },
-      { name: 'organizationName', value: 'Innovation Sandbox' },
-      { name: 'organizationalUnitName', value: 'Commercial Bridge Client' },
-      { name: 'countryName', value: 'US' },
-    ];
+    // Import the private key for CSR generation
+    const cryptoKey = await crypto.subtle.importKey(
+      'pkcs8',
+      Buffer.from(privateKey.replace(/-----BEGIN PRIVATE KEY-----\n|\n-----END PRIVATE KEY-----/g, ''), 'base64'),
+      {
+        name: 'RSASSA-PKCS1-v1_5',
+        hash: 'SHA-256',
+      },
+      true,
+      ['sign']
+    );
 
-    // Use OpenSSL to create CSR (simpler than pure Node.js crypto)
-    const tempDir = os.tmpdir();
-    const keyPath = path.join(tempDir, `temp-key-${Date.now()}.pem`);
-    const csrPath = path.join(tempDir, `temp-csr-${Date.now()}.pem`);
+    // Create CSR with subject information
+    const csr = await x509.Pkcs10CertificateRequestGenerator.create({
+      name: `CN=${sanitizedCN}, OU=Commercial Bridge Client, O=Innovation Sandbox, C=US`,
+      keys: {
+        privateKey: cryptoKey,
+        publicKey: await crypto.subtle.importKey(
+          'spki',
+          Buffer.from(publicKey.replace(/-----BEGIN PUBLIC KEY-----\n|\n-----END PUBLIC KEY-----/g, ''), 'base64'),
+          {
+            name: 'RSASSA-PKCS1-v1_5',
+            hash: 'SHA-256',
+          },
+          true,
+          ['verify']
+        ),
+      },
+      signingAlgorithm: {
+        name: 'RSASSA-PKCS1-v1_5',
+        hash: 'SHA-256',
+      },
+    });
 
-    try {
-      fs.writeFileSync(keyPath, privateKey);
+    // Export CSR to PEM format
+    const csrPem = csr.toString('pem');
+    console.log('✅ CSR generated (using pure Node.js - no OpenSSL required)');
 
-      const { execSync } = require('child_process');
-      // semgrep: ignore detect-child-process - commonName is sanitized above to prevent injection
-      execSync(
-        `openssl req -new -key ${keyPath} -out ${csrPath} ` +
-          `-subj "/C=US/O=Innovation Sandbox/OU=Commercial Bridge Client/CN=${sanitizedCN}"`,
-      );
-
-      const csr = fs.readFileSync(csrPath, 'utf-8');
-      console.log('✅ CSR generated');
-
-      return { privateKey, csr };
-    } finally {
-      // Cleanup temp files
-      if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
-      if (fs.existsSync(csrPath)) fs.unlinkSync(csrPath);
-    }
+    return { privateKey, csr: csrPem };
   }
 
   /**
@@ -395,7 +403,7 @@ async function main() {
     console.log(`✅ Found PCA: ${pcaArn}`);
 
     // Step 2: Generate private key and CSR
-    const { privateKey, csr } = issuer.generateKeyAndCSR(clientName);
+    const { privateKey, csr } = await issuer.generateKeyAndCSR(clientName);
 
     // Step 3: Issue certificate from PCA
     const certificateArn = await issuer.issueCertificate(pcaArn, csr, certValidityDays);

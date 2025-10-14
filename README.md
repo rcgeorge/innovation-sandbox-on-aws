@@ -55,7 +55,6 @@ In order to test, build, and deploy the solution from source the following prere
 - Python (Optional, for pre-commit hooks)
 - Pre-Commit (Optional, for automated code checks)
 - Docker (Optional, for building ECR images locally - can use CodeBuild instead)
-- OpenSSL (Optional, required only for PCA certificate generation in GovCloud deployments)
 
 > **Note for Windows Users:** The solution now supports Windows development environments. All npm scripts have been updated to work cross-platform. The bash scripts in the `deployment/` folder are still Linux/MacOS only, but core development and deployment commands work on Windows.
 
@@ -414,7 +413,30 @@ If using AWS profiles, these commands automatically use `AWS_GOVCLOUD_PROFILE` f
 npm run deploy:account-pool
 npm run deploy:idc
 npm run deploy:data
-npm run deploy:container
+npm run deploy:container  # Creates ECR repositories for you
+```
+
+**Step 3: Build and Push Container Images (After Container Stack Deployed)**
+
+The Container stack creates empty ECR repositories. You must build and push images to them:
+
+```shell
+# Option A: Using Docker locally
+npm run docker:build-and-push
+npm run docker:frontend:build-and-push
+
+# Option B: Using AWS CodeBuild (no Docker required)
+npm run deploy:codebuild
+npm run codebuild:nuke
+npm run codebuild:frontend
+```
+
+**Step 4: Update Container Stack (To use new images)**
+
+After images are pushed, update the ECS services:
+
+```shell
+npm run deploy:container  # Redeploy to pull new images
 ```
 
 Or explicitly specify a profile:
@@ -423,10 +445,13 @@ Or explicitly specify a profile:
 npm run deploy:account-pool -- --profile govcloud
 npm run deploy:idc -- --profile govcloud
 npm run deploy:data -- --profile govcloud
-npm run deploy:container -- --profile govcloud
+npm run deploy:container -- --profile govcloud  # Creates ECR repos
+# ... build and push images ...
+npm run deploy:container -- --profile govcloud  # Update to use images
 ```
 
 The container stack (`InnovationSandbox-Container`) deploys:
+- **ECR repositories** for account cleaner and frontend images (auto-created)
 - **ECS Fargate** for frontend hosting (replaces CloudFront which is unavailable in GovCloud)
 - **Application Load Balancer** for ingress
 - **Account cleaner ECS tasks** (same as compute stack)
@@ -625,7 +650,17 @@ npm run commercial:bootstrap
 
 # Deploy core commercial bridge stacks (CostInfo, AccountCreation, AcceptInvitation, ApiGateway)
 npm run commercial:deploy
+
+# Extract outputs and automatically update .env
+npm run commercial:extract-outputs
 ```
+
+The `extract-outputs` command automatically queries CloudFormation stack outputs and updates your `.env` file with:
+- `COMMERCIAL_BRIDGE_API_URL`
+- `COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN` (if Roles Anywhere deployed)
+- `COMMERCIAL_BRIDGE_PROFILE_ARN` (if Roles Anywhere deployed)
+- `COMMERCIAL_BRIDGE_ROLE_ARN` (if Roles Anywhere deployed)
+- `COMMERCIAL_BRIDGE_PCA_ARN` (if PCA deployed)
 
 #### Deploying with Optional Stacks (PCA and/or Roles Anywhere)
 
@@ -660,7 +695,7 @@ To deploy optional stacks, configure them in `.env` **before** running `npm run 
 
    **This command automatically:**
    - Generates RSA 2048-bit private key
-   - Creates Certificate Signing Request (CSR) with CN="govcloud-commercial-bridge"
+   - Creates Certificate Signing Request (CSR) with CN="govcloud-commercial-bridge" (pure Node.js - no OpenSSL required)
    - Issues certificate from PCA in commercial account
    - Saves certificate files locally to `commercial-bridge/certs/`
    - **Switches to GovCloud credentials** (uses `AWS_GOVCLOUD_PROFILE`)
@@ -668,7 +703,6 @@ To deploy optional stacks, configure them in `.env` **before** running `npm run 
    - Stores base64-encoded certificate and private key in secret
 
    **Requirements:**
-   - OpenSSL must be installed (for CSR generation)
    - Commercial AWS credentials configured (for PCA access)
    - GovCloud AWS credentials configured (for Secrets Manager access)
 
@@ -836,26 +870,22 @@ npm run commercial:deploy -- --profile commercial
 
 # Step 3: Issue client certificate and store in GovCloud
 npm run commercial:pca:issue-and-update-secret
-# Requires: OpenSSL, commercial profile for PCA, govcloud profile for Secrets Manager
+# Requires: commercial profile for PCA, govcloud profile for Secrets Manager
 # Creates: commercial-bridge/certs/govcloud-commercial-bridge.{pem,key,chain}
 # Updates: GovCloud Secrets Manager secret with base64-encoded cert and key
+# Note: Uses pure Node.js - no OpenSSL required
 
-# Step 4: Extract Commercial Bridge ARNs
-aws cloudformation describe-stacks --stack-name CommercialBridge-ApiGateway \
-  --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text \
-  --profile commercial > /tmp/api-url.txt
+# Step 4: Extract Commercial Bridge outputs and update .env automatically
+npm run commercial:extract-outputs
+# Automatically extracts and adds to .env:
+#   COMMERCIAL_BRIDGE_API_URL
+#   COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN
+#   COMMERCIAL_BRIDGE_PROFILE_ARN
+#   COMMERCIAL_BRIDGE_ROLE_ARN
+#   COMMERCIAL_BRIDGE_PCA_ARN
+#   COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN (if from pca:issue-and-update-secret)
 
-aws cloudformation describe-stacks --stack-name CommercialBridge-RolesAnywhere \
-  --query 'Stacks[0].Outputs' --output json --profile commercial > /tmp/roles-anywhere-outputs.json
-
-# Step 5: Add extracted values to .env
-# COMMERCIAL_BRIDGE_API_URL="<from api-url.txt>"
-# COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN="<from roles-anywhere-outputs.json>"
-# COMMERCIAL_BRIDGE_PROFILE_ARN="<from roles-anywhere-outputs.json>"
-# COMMERCIAL_BRIDGE_ROLE_ARN="<from roles-anywhere-outputs.json>"
-# COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN="<from pca:issue-and-update-secret output>"
-
-# Step 6: Deploy GovCloud stacks (they'll use cert-based auth to call Commercial Bridge)
+# Step 5: Deploy GovCloud stacks (they'll use cert-based auth to call Commercial Bridge)
 npm run deploy:account-pool -- --profile govcloud
 npm run deploy:idc -- --profile govcloud
 npm run deploy:data -- --profile govcloud
@@ -863,9 +893,9 @@ npm run deploy:container -- --profile govcloud
 ```
 
 **Troubleshooting:**
-- **"OpenSSL not found"**: Install OpenSSL (included with Git for Windows, or install separately)
 - **"Access denied" for GovCloud Secrets Manager**: Verify `AWS_GOVCLOUD_PROFILE` is configured correctly
-- **"PcaStack not found"**: Ensure `ENABLE_PCA=true` before deploying commercial bridge
+- **"CommercialBridge-PCA not found"**: Ensure `ENABLE_PCA=true` in .env before deploying commercial bridge
+- **"CDK using wrong region"**: Delete stale CDK output: `rm -r commercial-bridge/infrastructure/cdk.out`
 - **Certificate expired**: Rotate certificates using the same `pca:issue-and-update-secret` command (updates existing secret)
 
 For more details, see [commercial-bridge/README.md](commercial-bridge/README.md).
