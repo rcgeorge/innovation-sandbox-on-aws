@@ -14,8 +14,12 @@ RUN addgroup -g 101 -S nginx || true && \
 # Copy pre-built assets to NGINX serving directory
 COPY dist /usr/share/nginx/html
 
-# Copy custom NGINX configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy custom NGINX configuration template (will be processed by entrypoint script)
+COPY nginx.conf /etc/nginx/conf.d/default.conf.template
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 # Create necessary directories and set permissions for non-root user
 RUN touch /var/run/nginx.pid && \
@@ -25,9 +29,6 @@ RUN touch /var/run/nginx.pid && \
     chown -R nginx:nginx /etc/nginx/conf.d && \
     chown -R nginx:nginx /usr/share/nginx/html
 
-# Switch to non-root user
-USER nginx
-
 # Expose port 80
 EXPOSE 80
 
@@ -35,5 +36,5 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://localhost:80/ || exit 1
 
-# Start NGINX
-CMD ["nginx", "-g", "daemon off;"]
+# Use custom entrypoint that substitutes environment variables
+ENTRYPOINT ["/docker-entrypoint.sh"]
