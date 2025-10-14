@@ -210,16 +210,17 @@ for (const pattern of suspiciousPatterns) {
 }
 
 // Execute command with environment variables using shell
-// semgrep: ignore spawn-shell-true
+// nosemgrep: javascript.lang.security.audit.spawning-process.shelljs-exec-with-var
 // JUSTIFICATION: shell: true is required for this script's functionality:
 // - Commands include shell operators (&&, ||, |, >, etc.) from npm scripts
 // - Environment variable expansion is needed ($VAR syntax)
-// - Commands come from trusted package.json npm scripts
+// - Commands come from trusted package.json npm scripts, not user input
 // - Basic validation above checks for obviously dangerous patterns
 // - .env file should be secured and not user-modifiable in production
+// deepcode ignore CommandInjection: Commands come from trusted package.json npm scripts
 const child = spawn(commandString, {
   stdio: 'inherit',
-  shell: true,
+  shell: true, // Required for npm script shell operators
   env: process.env
 });
 

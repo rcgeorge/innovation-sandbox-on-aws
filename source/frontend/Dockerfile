@@ -17,9 +17,10 @@ COPY dist /usr/share/nginx/html
 # Copy custom NGINX configuration template (will be processed by entrypoint script)
 COPY nginx.conf /etc/nginx/conf.d/default.conf.template
 
-# Copy entrypoint script
+# Copy entrypoint script and fix line endings (Windows CRLF -> Linux LF)
 COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh && \
+    sed -i 's/\r$//' /docker-entrypoint.sh
 
 # Create necessary directories and set permissions for non-root user
 RUN touch /var/run/nginx.pid && \
@@ -27,7 +28,11 @@ RUN touch /var/run/nginx.pid && \
     chown -R nginx:nginx /var/cache/nginx && \
     chown -R nginx:nginx /var/log/nginx && \
     chown -R nginx:nginx /etc/nginx/conf.d && \
-    chown -R nginx:nginx /usr/share/nginx/html
+    chown -R nginx:nginx /usr/share/nginx/html && \
+    chown nginx:nginx /docker-entrypoint.sh
+
+# Switch to non-root user
+USER nginx
 
 # Expose port 80
 EXPOSE 80
