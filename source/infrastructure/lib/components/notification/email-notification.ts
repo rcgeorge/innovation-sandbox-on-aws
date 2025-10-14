@@ -28,6 +28,7 @@ export interface EmailNotificationLambdaProps {
   isbEventBus: EventBus;
   namespace: string;
   idcAccountId: string;
+  isGovCloud?: boolean;
 }
 
 export class EmailNotificationLambda extends Construct {
@@ -110,6 +111,7 @@ export class EmailNotificationLambda extends Construct {
           detailType: SubscribedEmailEvents,
         },
       },
+      isGovCloud: props.isGovCloud,
     });
   }
 }

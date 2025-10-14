@@ -16,6 +16,7 @@ interface EventsToLambdaProps {
   eventBus: EventBus;
   lambdaFunctionProps: LambdaFunctionProps;
   ruleProps: RuleProps;
+  isGovCloud?: boolean;
 }
 
 export class EventsToLambda extends Construct {
@@ -35,5 +36,12 @@ export class EventsToLambda extends Construct {
       principal: new ServicePrincipal("events.amazonaws.com"),
       sourceArn: props.eventBus.eventBusArn,
     });
+
+    // GovCloud doesn't support Tags on EventBridge Rules
+    // Remove Tags property at CloudFormation level
+    if (props.isGovCloud) {
+      const cfnRule = rule.node.defaultChild as any;
+      cfnRule.addPropertyDeletionOverride('Tags');
+    }
   }
 }

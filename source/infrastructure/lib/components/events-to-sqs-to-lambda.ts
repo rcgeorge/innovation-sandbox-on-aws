@@ -72,9 +72,13 @@ export class EventsToSqsToLambda extends Construct {
     });
     props.lambdaFunction.addEventSource(eventSource);
 
-    // GovCloud doesn't support tags on EventSourceMapping
-    // Use an Aspect to remove tags from all EventSourceMapping resources
+    // GovCloud doesn't support tags on EventBridge Rules or EventSourceMapping
     if (props.isGovCloud) {
+      // Remove Tags property at CloudFormation level for EventBridge Rule
+      const cfnRule = rule.node.defaultChild as any;
+      cfnRule.addPropertyDeletionOverride('Tags');
+
+      // Remove tags from EventSourceMapping
       Aspects.of(props.lambdaFunction).add(new RemoveEventSourceMappingTagsAspect());
     }
 

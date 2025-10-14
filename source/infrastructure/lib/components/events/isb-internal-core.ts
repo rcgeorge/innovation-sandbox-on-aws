@@ -1,5 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { Tags } from "aws-cdk-lib";
 import {
   EventBus,
   EventField,
@@ -73,7 +74,7 @@ export class IsbInternalCore {
       encryptionMasterKey: props.kmsKey,
     });
 
-    new Rule(scope, "ISBEventBusLogging", {
+    const loggingRule = new Rule(scope, "ISBEventBusLogging", {
       description: "logs all events that get sent to the ISB event bus",
       eventBus: this.eventBus,
       targets: [
@@ -96,6 +97,13 @@ export class IsbInternalCore {
         source: [{ prefix: "" }] as any[],
       },
     });
+
+    // GovCloud doesn't support Tags on EventBridge Rules
+    // Remove Tags property at CloudFormation level
+    if (props.isGovCloud) {
+      const cfnRule = loggingRule.node.defaultChild as any;
+      cfnRule.addPropertyDeletionOverride('Tags');
+    }
 
     this.leaseMonitoringLambda = new LeaseMonitoringLambda(
       scope,
@@ -137,6 +145,7 @@ export class IsbInternalCore {
       isbEventBus: this.eventBus,
       namespace: props.namespace,
       idcAccountId: props.idcAccountId,
+      isGovCloud: props.isGovCloud,
     });
   }
 }
