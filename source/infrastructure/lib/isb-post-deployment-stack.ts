@@ -59,6 +59,31 @@ export class IsbPostDeploymentStack extends Stack {
       },
     );
 
+    const notificationEmailFrom = new ParameterWithLabel(
+      this,
+      "NotificationEmailFrom",
+      {
+        label: "Notification Email From Address",
+        description:
+          "The email address to use in the 'from' field of all email notifications",
+        allowedPattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+      },
+    );
+
+    const ssoInstanceArn = new ParameterWithLabel(this, "SsoInstanceArn", {
+      label: "IAM Identity Center Instance ARN",
+      description:
+        "The ARN of the IAM Identity Center instance (from IDC_REGION)",
+      allowedPattern: "^arn:aws(-us-gov)?:sso:::instance/ssoins-[a-f0-9]{16}$",
+    });
+
+    const identityStoreId = new ParameterWithLabel(this, "IdentityStoreId", {
+      label: "Identity Store ID",
+      description:
+        "The Identity Store ID (starts with d-) from IAM Identity Center",
+      allowedPattern: "^d-[a-f0-9]{10}$",
+    });
+
     addParameterGroup(this, {
       label: "Post-Deployment Stack Configuration",
       parameters: [
@@ -67,6 +92,9 @@ export class IsbPostDeploymentStack extends Stack {
         idcAccountId,
         webAppUrl,
         awsAccessPortalUrl,
+        notificationEmailFrom,
+        ssoInstanceArn,
+        identityStoreId,
       ],
     });
 
@@ -153,6 +181,10 @@ export class IsbPostDeploymentStack extends Stack {
         namespace: namespaceParam.namespace.valueAsString,
         webAppUrl,
         awsAccessPortalUrl: awsAccessPortalUrl.valueAsString,
+        notificationEmailFrom: notificationEmailFrom.valueAsString,
+        ssoInstanceArn: ssoInstanceArn.valueAsString,
+        identityStoreId: identityStoreId.valueAsString,
+        idcAccountId: idcAccountId.valueAsString,
         appConfigApplication: sharedParamCR.getAttString(
           "configApplicationId",
         ),

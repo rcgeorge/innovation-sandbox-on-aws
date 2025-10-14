@@ -1,20 +1,62 @@
-# Post-Deployment Manual Configuration Guide
+# Post-Deployment Automated Configuration Guide
 
 ## Overview
 
-The Post-Deployment stack automates updating AWS AppConfig with your web application URL. However, **SAML application creation must be done manually** through the AWS IAM Identity Center console due to AWS API limitations.
+The Post-Deployment stack **now automates** most configuration tasks including:
+- ✅ Finding and updating your IAM Identity Center SAML application
+- ✅ Generating SAML sign-in/sign-out URLs
+- ✅ Updating AWS AppConfig with complete authentication configuration
+- ✅ Configuring notification email
+- ✅ Disabling maintenance mode
 
-## Important Limitation
+**What remains manual:**
+- Creating the initial SAML application (done by IDC stack)
+- Configuring attribute mappings (one-time setup)
+- Assigning users/groups (one-time setup)
+- SES email verification
 
-**AWS IAM Identity Center does not support creating SAML 2.0 applications via API.** The `CreateApplication` API only supports OAuth 2.0 applications. Therefore, the SAML application setup must be completed manually through the AWS Management Console.
+## What Changed
 
-Source: [AWS IAM Identity Center CreateApplication API Documentation](https://docs.aws.amazon.com/singlesignon/latest/APIReference/API_CreateApplication.html)
+Previously, the Post-Deployment stack only updated AppConfig with placeholder values and required extensive manual configuration. Now it:
 
-> "This API does not support creating SAML 2.0 customer managed applications or AWS managed applications. You can create a SAML 2.0 customer managed application in the AWS Management Console only."
+1. **Automatically finds** your IAM Identity Center SAML application by namespace
+2. **Updates the application** start URL to point to your frontend (CloudFront or ALB)
+3. **Generates SAML URLs** using the correct format for your AWS partition (GovCloud or Commercial)
+4. **Updates AppConfig** with all required authentication and notification configuration
+5. **Disables maintenance mode** so your application is immediately usable
+
+## Quick Start (Automated Deployment)
+
+**Step 1: Update your `.env` file**
+
+Ensure these values are set (most auto-populated by `npm run configure`):
+```shell
+WEB_APP_URL="http://your-alb-url.elb.amazonaws.com"  # Or CloudFront URL
+NOTIFICATION_EMAIL_FROM="your-email@example.com"     # Update with your verified SES email
+AWS_ACCESS_PORTAL_URL="https://d-xxxxxxxxx.awsapps.com/start"
+SSO_INSTANCE_ARN="arn:aws-us-gov:sso:::instance/ssoins-xxxxx"  # Or arn:aws:sso for commercial
+IDENTITY_STORE_ID="d-xxxxxxxxxx"
+```
+
+**Step 2: Deploy the PostDeployment stack**
+
+```shell
+npm run deploy:post-deployment
+```
+
+**Step 3: Verify the configuration**
+
+Check the CloudFormation stack outputs:
+```shell
+aws cloudformation describe-stacks --stack-name InnovationSandbox-PostDeployment \
+  --query 'Stacks[0].Outputs' --output table
+```
+
+**That's it!** Your application should now be fully configured and accessible.
 
 ## Prerequisites
 
-Before starting manual configuration:
+Before deploying the PostDeployment stack:
 
 1. ✅ All other stacks deployed successfully (Account Pool, IDC, Data, Compute/Container)
 2. ✅ Post-Deployment stack deployed successfully

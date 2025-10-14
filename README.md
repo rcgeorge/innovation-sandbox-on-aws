@@ -500,11 +500,30 @@ This creates:
 - Frontend ECS service (NGINX + React) that proxies to REST API
 - Account Cleaner ECS tasks
 
-**Step 9: Post-Deployment (Optional)**
+**Step 9: Post-Deployment Configuration (Automated)**
+
+The PostDeployment stack automates the final configuration steps:
 
 ```shell
 npm run deploy:post-deployment
 ```
+
+**What this does automatically:**
+- Finds your IAM Identity Center SAML application (`InnovationSandboxApp-myisb`)
+- Updates the application's start URL to the ALB URL
+- Generates SAML sign-in/sign-out URLs for GovCloud
+- Updates AppConfig with all authentication configuration
+- Configures notification email address
+- Disables maintenance mode
+
+**Prerequisites:** Before deploying, ensure your `.env` file contains:
+- `WEB_APP_URL` - The ALB URL from Container stack outputs
+- `NOTIFICATION_EMAIL_FROM` - Email address for notifications (must be verified in SES)
+- `AWS_ACCESS_PORTAL_URL` - Your IAM Identity Center access portal
+- `SSO_INSTANCE_ARN` - IAM Identity Center instance ARN
+- `IDENTITY_STORE_ID` - Identity Store ID from IAM Identity Center
+
+The `npm run configure` wizard automatically populates most of these values, but you should update `NOTIFICATION_EMAIL_FROM` with your actual email address.
 
 **Step 10: Access Your Deployment**
 
@@ -531,7 +550,32 @@ The container stack (`InnovationSandbox-Container`) deploys:
 
 ### Post Deployment Tasks
 
-Before the solution is fully functional the post deployment tasks must be completed. See the [implementation guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/post-deployment-configuration-tasks.html) for more details.
+The PostDeployment stack automates most post-deployment configuration. After deploying all core stacks (AccountPool, IDC, Data, Compute/Container), deploy the PostDeployment stack:
+
+```shell
+npm run deploy:post-deployment
+```
+
+**What gets automated:**
+1. ✅ IAM Identity Center application URL update
+2. ✅ SAML sign-in/sign-out URL generation
+3. ✅ AppConfig authentication configuration
+4. ✅ Notification email configuration
+5. ✅ Maintenance mode disabled
+
+**Before deploying PostDeployment stack:**
+- Update `NOTIFICATION_EMAIL_FROM` in `.env` with your verified SES email address
+- Ensure IAM Identity Center SAML application exists (created by IDC stack)
+- Verify `WEB_APP_URL` in `.env` matches your frontend URL (CloudFront or ALB)
+
+**Manual steps still required:**
+- **SES Email Verification:** Verify your sender email address in Amazon SES and request production access
+- **IAM Identity Center User Assignment:** Assign users/groups to the SAML application (if not already done)
+- **IAM Identity Center Attribute Mappings:** Configure SAML attribute mappings (if not already done)
+  - Subject: `${user:email}` (format: emailAddress)
+  - email: `${user:email}` (format: unspecified)
+
+For complete details on manual steps, see the [POST-DEPLOYMENT-README.md](source/infrastructure/lib/POST-DEPLOYMENT-README.md) or [implementation guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/post-deployment-configuration-tasks.html).
 
 ## Running Tests
 
