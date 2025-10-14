@@ -113,12 +113,12 @@ export class EcsFrontend extends Construct {
       },
       portMappings: [
         {
-          containerPort: 80,
+          containerPort: 8080,
           protocol: ecs.Protocol.TCP,
         },
       ],
       healthCheck: {
-        command: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:80/health || exit 1"],
+        command: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8080/health || exit 1"],
         interval: Duration.seconds(30),
         timeout: Duration.seconds(5),
         retries: 3,
@@ -135,8 +135,8 @@ export class EcsFrontend extends Construct {
 
     serviceSecurityGroup.addIngressRule(
       albSecurityGroup,
-      ec2.Port.tcp(80),
-      "Allow traffic from ALB"
+      ec2.Port.tcp(8080),
+      "Allow traffic from ALB on container port"
     );
 
     // Create ECS Service
@@ -156,7 +156,7 @@ export class EcsFrontend extends Construct {
     // Add target group and listener
     const targetGroup = new elbv2.ApplicationTargetGroup(this, "TargetGroup", {
       vpc: props.vpc,
-      port: 80,
+      port: 8080,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [this.service],
       healthCheck: {

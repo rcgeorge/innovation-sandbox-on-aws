@@ -34,12 +34,12 @@ RUN touch /var/run/nginx.pid && \
 # Switch to non-root user
 USER nginx
 
-# Expose port 80
-EXPOSE 80
+# Expose port 8080 (non-privileged port for non-root user)
+EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:80/ || exit 1
+  CMD wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1
 
 # Use custom entrypoint that substitutes environment variables
 ENTRYPOINT ["/docker-entrypoint.sh"]
