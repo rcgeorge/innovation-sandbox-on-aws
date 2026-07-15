@@ -73,6 +73,12 @@ function convertToPolicyDocument(policy: ScpPolicy): PolicyDocument {
 export interface IsbScpPolicyProps {
   namespace?: string;
   isbManagedRegions?: string[];
+  /**
+   * The AWS partition (e.g. "aws", "aws-us-gov") used to render ARNs in the
+   * policy documents. Defaults to "aws" so commercial deployments produce
+   * byte-identical output to previous versions.
+   */
+  partition?: string;
 }
 
 export function getInnovationSandboxProtectScp(
@@ -82,6 +88,7 @@ export function getInnovationSandboxProtectScp(
     "isb-protect-control-plane-resource-scp.json",
     props.namespace,
     props.isbManagedRegions,
+    props.partition,
   );
   return convertToPolicyDocument(protectPolicy);
 }
@@ -93,6 +100,7 @@ export function getInnovationSandboxRestrictionsScp(
     "isb-restrictions-scp.json",
     props.namespace,
     props.isbManagedRegions,
+    props.partition,
   );
   return convertToPolicyDocument(restrictionsPolicy);
 }
@@ -104,6 +112,7 @@ export function getInnovationSandboxAwsNukeSupportedServicesScp(
     "isb-aws-nuke-supported-services-scp.json",
     props.namespace,
     props.isbManagedRegions,
+    props.partition,
   );
   return convertToPolicyDocument(nukePolicy);
 }
@@ -115,6 +124,7 @@ export function getInnovationSandboxLimitRegionsScp(
     "isb-limit-managed-regions.json",
     props.namespace,
     props.isbManagedRegions,
+    props.partition,
   );
   return convertToPolicyDocument(limitRegionsPolicy);
 }
@@ -126,6 +136,7 @@ export function getInnovationSandboxWriteProtectionScp(
     "isb-deny-all-non-control-plane-actions.json",
     props.namespace,
     props.isbManagedRegions,
+    props.partition,
   );
   return convertToPolicyDocument(writeProtectionPolicy);
 }
@@ -134,6 +145,7 @@ function loadPolicyFromFile(
   fileName: string,
   namespace?: string,
   regionList?: string[],
+  partition?: string,
 ): ScpPolicy {
   try {
     // Define the path to the policy file
@@ -141,6 +153,13 @@ function loadPolicyFromFile(
 
     // Read the JSON file
     let processedContent = fs.readFileSync(policyPath, "utf8");
+
+    // Replace the partition placeholder. Defaults to "aws" so commercial
+    // deployments render identical ARNs to previous versions.
+    processedContent = processedContent.replace(
+      /\${partition}/g,
+      partition ?? "aws",
+    );
 
     // Replace namespace if provided
     if (namespace) {

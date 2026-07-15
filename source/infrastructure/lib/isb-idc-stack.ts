@@ -46,7 +46,8 @@ export class IsbIdcStack extends Stack {
       label: "SSO Instance ARN",
       description:
         "The ARN of the SSO instance in IAM Identity Center (arn:aws:sso:::instance/ssoins-xxxxxxxxxxxxxxxx)",
-      allowedPattern: "^arn:aws:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$",
+      allowedPattern:
+        "^arn:(aws|aws-us-gov|aws-cn):sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$",
     });
 
     const adminGroupName = new OptionalParameter(this, "AdminGroupName", {

@@ -4,6 +4,7 @@ import { Aws, CfnOutput, Duration, Token } from "aws-cdk-lib";
 import {
   RestApi as ApiGatewayRestApi,
   AuthorizationType,
+  EndpointType,
   IdentitySource,
   LogGroupLogDestination,
   RequestAuthorizer,
@@ -30,6 +31,7 @@ import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/compo
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
+import { getHostingMode } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
 import { grantIsbAppConfigRead } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
@@ -167,8 +169,18 @@ export class RestApi extends ApiGatewayRestApi {
       resultsCacheTtl: Duration.minutes(5),
     });
 
+    // EDGE-optimized endpoints (the API Gateway default) require CloudFront and
+    // are unavailable where CloudFront is not, e.g. GovCloud. When the ALB + S3
+    // hosting mode is selected, use a REGIONAL endpoint. Commercial keeps the
+    // default endpoint type so its synth output is unchanged.
+    const endpointConfiguration =
+      getHostingMode(scope) === "cloudfront"
+        ? undefined
+        : { types: [EndpointType.REGIONAL] };
+
     super(scope, id, {
       description: "Innovation Sandbox on AWS Rest API",
+      ...(endpointConfiguration ? { endpointConfiguration } : {}),
       deployOptions: {
         accessLogDestination: new LogGroupLogDestination(
           IsbComputeResources.globalLogGroup,

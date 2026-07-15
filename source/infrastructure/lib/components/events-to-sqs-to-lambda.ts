@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
+import { isGovCloud } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
 import { Duration } from "aws-cdk-lib";
 import { EventBus, Rule, RuleProps } from "aws-cdk-lib/aws-events";
 import { SqsQueue, SqsQueueProps } from "aws-cdk-lib/aws-events-targets";
 import { ServicePrincipal } from "aws-cdk-lib/aws-iam";
-import { IFunction } from "aws-cdk-lib/aws-lambda";
+import { CfnEventSourceMapping, IFunction } from "aws-cdk-lib/aws-lambda";
 import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { IQueue, Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
@@ -60,6 +61,17 @@ export class EventsToSqsToLambda extends Construct {
         batchSize: 1,
       }),
     );
+
+    // AWS::Lambda::EventSourceMapping does not support the Tags property in
+    // GovCloud. Strip it there so the template validates; commercial output is
+    // untouched.
+    if (isGovCloud(scope)) {
+      for (const child of props.lambdaFunction.node.findAll()) {
+        if (child instanceof CfnEventSourceMapping) {
+          child.addPropertyDeletionOverride("Tags");
+        }
+      }
+    }
 
     kmsKey.grantEncryptDecrypt(new ServicePrincipal("events.amazonaws.com"));
     kmsKey.grantEncryptDecrypt(new ServicePrincipal("sqs.amazonaws.com"));

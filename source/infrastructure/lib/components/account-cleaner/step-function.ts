@@ -97,7 +97,7 @@ export class AccountCleanerStepFunction extends Construct {
     const startCodeBuildCall = new CustomState(this, "StartCodeBuildCall", {
       stateJson: {
         Type: "Task",
-        Resource: "arn:aws:states:::codebuild:startBuild.sync",
+        Resource: `arn:${Stack.of(this).partition}:states:::codebuild:startBuild.sync`,
         Parameters: {
           ProjectName: codeBuildCleanupProject.projectName,
           EnvironmentVariablesOverride: [

@@ -11,6 +11,8 @@ import { Key } from "aws-cdk-lib/aws-kms";
 import { Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 
+import { isGovCloud } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
+
 import { AccountDriftMonitoringLambda } from "@amzn/innovation-sandbox-infrastructure/components/account-management/account-drift-monitoring-lambda";
 import { AccountLifecycleManagementLambda } from "@amzn/innovation-sandbox-infrastructure/components/account-management/account-lifecycle-management-lambda";
 import { LeaseMonitoringLambda } from "@amzn/innovation-sandbox-infrastructure/components/account-management/lease-monitoring-lambda";
@@ -35,15 +37,20 @@ export class IsbInternalCore {
   readonly accountDriftMonitoringLambda;
 
   constructor(scope: Construct, props: IsbEventBackplaneProps) {
-    this.eventBus = new EventBus(scope, "ISBEventBus", {
-      description: "core event bus for all ISB activity",
-      kmsKey: props.kmsKey,
-      deadLetterQueue: new Queue(scope, "ISBEventBusDLQ", {
-        queueName: `ISB-${props.namespace}-ISBEventBus-DLQ`,
-        encryption: QueueEncryption.KMS,
-        encryptionMasterKey: props.kmsKey,
-      }),
-    });
+    // GovCloud EventBus does not support the description, kmsKey, or
+    // deadLetterQueue properties. Emit the full configuration in commercial
+    // (unchanged) and a minimal EventBus in GovCloud.
+    this.eventBus = isGovCloud(scope)
+      ? new EventBus(scope, "ISBEventBus", {})
+      : new EventBus(scope, "ISBEventBus", {
+          description: "core event bus for all ISB activity",
+          kmsKey: props.kmsKey,
+          deadLetterQueue: new Queue(scope, "ISBEventBusDLQ", {
+            queueName: `ISB-${props.namespace}-ISBEventBus-DLQ`,
+            encryption: QueueEncryption.KMS,
+            encryptionMasterKey: props.kmsKey,
+          }),
+        });
 
     IsbComputeResources.globalLogGroup.addToResourcePolicy(
       new PolicyStatement({

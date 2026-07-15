@@ -184,6 +184,10 @@ export class AccountCleaner extends Construct {
               value: Stack.of(this).account,
               type: BuildEnvironmentVariableType.PLAINTEXT,
             },
+            AWS_PARTITION: {
+              value: Stack.of(this).partition,
+              type: BuildEnvironmentVariableType.PLAINTEXT,
+            },
             INTERMEDIATE_ROLE_ARN: {
               value: intermediateRoleArn,
               type: BuildEnvironmentVariableType.PLAINTEXT,
