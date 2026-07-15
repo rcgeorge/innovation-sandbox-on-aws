@@ -11,6 +11,7 @@ import {
   RestApiResourceProps,
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
+import { isGovCloudAccountProvisioningEnabled } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import {
@@ -58,6 +59,9 @@ export class ConfigurationsApi {
           ACCOUNT_POOL_CONFIG_PARAM_ARN:
             IsbComputeStack.sharedSpokeConfig.parameterArns
               .accountPoolConfigParamArn,
+          ...(isGovCloudAccountProvisioningEnabled(scope)
+            ? { GOVCLOUD_PROVISIONING_ENABLED: "true" }
+            : {}),
         },
         logGroup: restApi.logGroup,
         envSchema: ConfigurationLambdaEnvironmentSchema,

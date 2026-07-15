@@ -24,6 +24,9 @@ export const AccountLambdaEnvironmentSchema =
     HUB_ACCOUNT_ID: z.string(),
     ACCOUNT_POOL_CONFIG_PARAM_ARN: z.string(),
     IDC_CONFIG_PARAM_ARN: z.string(),
+    // "true" only when GovCloud provisioning is enabled at deploy time; gates
+    // POST /accounts/govcloud. Optional so commercial deployments validate.
+    GOVCLOUD_PROVISIONING_ENABLED: z.string().optional(),
   });
 
 export type AccountLambdaEnvironment = z.infer<

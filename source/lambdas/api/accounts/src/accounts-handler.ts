@@ -11,6 +11,10 @@ import {
 
 import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import {
+  GovCloudAccountProvisioningRequest,
+  GovCloudAccountProvisioningRequestSchema,
+} from "@amzn/innovation-sandbox-commons/events/govcloud-account-provisioning-request.js";
+import {
   AccountInCleanUpError,
   AccountNotInQuarantineError,
   InnovationSandbox,
@@ -77,6 +81,13 @@ const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
     path: "/accounts/unregistered",
     method: "GET",
     handler: middyFactory().handler(findUnregisteredAccountsHandler),
+  },
+  {
+    path: "/accounts/govcloud",
+    method: "POST",
+    handler: middyFactory()
+      .use(httpJsonBodyParser())
+      .handler(provisionGovCloudAccountHandler),
   },
 ];
 
@@ -186,6 +197,50 @@ async function postAccountHandler(
     body: JSON.stringify({
       status: "success",
       data: result,
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  };
+}
+
+async function provisionGovCloudAccountHandler(
+  event: IsbApiEvent,
+  context: AccountsApiContext,
+): Promise<APIGatewayProxyResult> {
+  // Only available when cross-partition provisioning is enabled at deploy time.
+  if (context.env.GOVCLOUD_PROVISIONING_ENABLED !== "true") {
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: {
+        errors: [{ message: "GovCloud account provisioning is not enabled." }],
+      },
+    });
+  }
+
+  const parsed = GovCloudAccountProvisioningRequestSchema.omit({
+    requestedBy: true,
+  })
+    .strict()
+    .safeParse(event.body);
+  if (!parsed.success) {
+    throw createHttpJSendValidationError(parsed.error);
+  }
+
+  const request = new GovCloudAccountProvisioningRequest({
+    ...parsed.data,
+    requestedBy: context.user.email,
+  });
+  await IsbServices.isbEventBridge(context.env).sendIsbEvent(tracer, request);
+
+  return {
+    statusCode: 202,
+    body: JSON.stringify({
+      status: "success",
+      data: {
+        message:
+          "GovCloud account provisioning started. The account will appear for registration once created and joined.",
+      },
     }),
     headers: {
       "Content-Type": "application/json",

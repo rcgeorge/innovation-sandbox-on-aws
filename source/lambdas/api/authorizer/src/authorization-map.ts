@@ -69,6 +69,9 @@ export const authorizationMap: AuthorizationMapType = {
   "/accounts/unregistered": {
     GET: ["Admin"],
   },
+  "/accounts/govcloud": {
+    POST: ["Admin"],
+  },
   "/blueprints": {
     GET: ["Manager", "Admin"], // Managers can view for template selection
     POST: ["Admin"], // Only admins can create

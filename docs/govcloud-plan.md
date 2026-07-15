@@ -172,11 +172,36 @@ GovCloud Compute synth is byte-clean without the flag and gains the layer +
 secret grants + bridge env with it. Cost-service unit tests (5) pass; a UTC
 date-key bug was found and fixed. Full suite 1425 pass.
 
-### Phase 4 — Optional cross-partition provisioning (`enableGovCloudAccountProvisioning=true`, default off)
-Commercial-bridge account-creation + accept-invitation Lambdas, GovCloud
-account-creation Step Function v3, flag-gated frontend "Create GovCloud Account"
-flow. Rewrite the PoC container/handlers cleanly (no TLS-disabled / `ACAO:*` /
-hardcoded-dev-login code from the fork).
+### Phase 4 — Optional cross-partition provisioning (`enableGovCloudAccountProvisioning=true`, default off) — done
+
+Fully flag-gated; zero footprint in commercial (verified: 0 provisioning refs in
+a no-flag Compute template).
+
+- **commercial-bridge** (gated by its own `enableAccountProvisioning`):
+  account-creation Lambda (`CreateGovCloudAccount` + poll + list) and
+  accept-invitation Lambda (management → commercial-linked → GovCloud
+  cross-partition AssumeRole chain → AcceptHandshake). IAM-authed, no `ACAO:*`.
+- **GovCloud client**: `createGovCloudAccount`, `getGovCloudAccountStatus`,
+  `acceptInvitation` added to `CommercialBridgeClient`.
+- **Orchestrator Lambda** (`govcloud-provisioning`): action-dispatch
+  (create/checkStatus/sendInvitation/acceptInvitation/moveToEntry). moveToEntry
+  moves the joined account root→Entry OU and records `commercialLinkedAccountId`.
+- **Step Function** (`GovCloudProvisioning`): create → poll → invite → accept →
+  moveToEntry, triggered by the `GovCloudAccountProvisioningRequest` event
+  (same event→Rule→StateMachine pattern as the cleaner). Once in Entry the
+  account uses the existing onboarding lifecycle — no bespoke registration.
+- **API**: `POST /accounts/govcloud` (Admin-only in the authorizer map; returns
+  404 unless `GOVCLOUD_PROVISIONING_ENABLED`) emits the request event.
+- **Config flag**: `govCloudProvisioningEnabled` is a UI-only field on
+  `GlobalConfigForUISchema`, injected at request time from
+  `GOVCLOUD_PROVISIONING_ENABLED` (like `isbManagedRegions`); default false.
+- **Frontend**: `createGovCloudAccount` service/hook + `CreateGovCloudAccountModal`,
+  with a "Create GovCloud Account" button in AddAccounts gated on the flag.
+
+**Runtime-unverified** (synth/type/test only here): the cross-partition
+AssumeRole chain, GovCloud `InviteAccountToOrganization`/`AcceptHandshake`, and
+the root→Entry `MoveAccount` need a real GovCloud + commercial deployment to
+exercise end-to-end.
 
 ## PR strategy
 Stacked PRs: (0) partition + drop-workarounds → (2) hosting behind flag → (3)

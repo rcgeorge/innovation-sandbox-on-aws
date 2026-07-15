@@ -6,6 +6,7 @@ import { LogGroup } from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
 
 import { AccountCleaner } from "@amzn/innovation-sandbox-infrastructure/components/account-cleaner/account-cleaner";
+import { GovCloudProvisioning } from "@amzn/innovation-sandbox-infrastructure/components/account-creation/govcloud-provisioning";
 import { AlbS3UiApi } from "@amzn/innovation-sandbox-infrastructure/components/alb-s3/alb-s3-ui-api";
 import { IsbPrivateNetwork } from "@amzn/innovation-sandbox-infrastructure/components/alb-s3/isb-private-network";
 import { RestApi } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
@@ -21,7 +22,10 @@ import { IsbLogGroups } from "@amzn/innovation-sandbox-infrastructure/components
 import { LogInsightsQueries } from "@amzn/innovation-sandbox-infrastructure/components/observability/log-insights-queries";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
-import { getHostingMode } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
+import {
+  getHostingMode,
+  isGovCloudAccountProvisioningEnabled,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
 import { YesNoParameter } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 import { IntermediateRole } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import { GroupCostReportingLambda } from "./components/observability/group-cost-reporting-lambda";
@@ -154,6 +158,18 @@ export class IsbComputeResources {
       orgMgtAccountId: props.orgMgtAccountId,
       isbEventBus: isbInternalCore.eventBus,
     });
+
+    // Optional cross-partition GovCloud account provisioning (flag-gated,
+    // default off). Zero footprint in commercial deployments.
+    if (isGovCloudAccountProvisioningEnabled(scope)) {
+      new GovCloudProvisioning(scope, "GovCloudProvisioning", {
+        eventBus: isbInternalCore.eventBus,
+        namespace: props.namespace,
+        orgMgtAccountId: props.orgMgtAccountId,
+        govCloudHomeRegion:
+          scope.node.tryGetContext("govCloudHomeRegion") ?? "us-gov-west-1",
+      });
+    }
 
     new LogArchiving(scope, "LogArchiving", {
       namespace: props.namespace,

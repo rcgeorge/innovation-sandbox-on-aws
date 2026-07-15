@@ -65,6 +65,13 @@ export class AccountService {
     await this.api.post(`/accounts`, { awsAccountId });
   }
 
+  async createGovCloudAccount(request: {
+    accountName: string;
+    email: string;
+  }): Promise<void> {
+    await this.api.post(`/accounts/govcloud`, request);
+  }
+
   async ejectAccount(awsAccountId: string): Promise<void> {
     await this.api.post(`/accounts/${awsAccountId}/eject`);
   }

@@ -10,11 +10,13 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { CreateGovCloudAccountModal } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/CreateGovCloudAccountModal";
 import {
   useAddAccount,
   useGetUnregisteredAccounts,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/hooks";
 import { UnregisteredAccount } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { Table } from "@aws-northstar/ui";
@@ -39,6 +41,11 @@ export const AddAccounts = () => {
   } = useGetUnregisteredAccounts();
 
   const { mutateAsync: addAccount } = useAddAccount({ skipInvalidation: true });
+
+  const { data: config } = useGetConfigurations();
+  const govCloudProvisioningEnabled =
+    config?.govCloudProvisioningEnabled ?? false;
+  const [showGovCloudModal, setShowGovCloudModal] = useState(false);
 
   const [selectedAccounts, setSelectedAccounts] = useState<
     UnregisteredAccount[]
@@ -144,6 +151,11 @@ export const AddAccounts = () => {
               onClick={() => refetch()}
               disabled={getUnregisteredAccountsIsLoading}
             />
+            {govCloudProvisioningEnabled && (
+              <Button onClick={() => setShowGovCloudModal(true)}>
+                Create GovCloud Account
+              </Button>
+            )}
             <Button
               variant="primary"
               onClick={showRegisterModal}
@@ -165,6 +177,12 @@ export const AddAccounts = () => {
         stripedRows
         enableKeyboardNavigation
       />
+      {govCloudProvisioningEnabled && (
+        <CreateGovCloudAccountModal
+          visible={showGovCloudModal}
+          onClose={() => setShowGovCloudModal(false)}
+        />
+      )}
     </ContentLayout>
   );
 };

@@ -12,6 +12,10 @@ export const ConfigurationLambdaEnvironmentSchema =
     REPORTING_CONFIG_PROFILE_ID: z.string(),
     AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: z.string(),
     ACCOUNT_POOL_CONFIG_PARAM_ARN: z.string(),
+    // "true" only when GovCloud cross-partition provisioning is enabled at
+    // deploy time; surfaced to the UI to gate the Create GovCloud Account flow.
+    // Optional so commercial deployments (which never set it) validate.
+    GOVCLOUD_PROVISIONING_ENABLED: z.string().optional(),
   });
 
 export type ConfigurationLambdaEnvironment = z.infer<

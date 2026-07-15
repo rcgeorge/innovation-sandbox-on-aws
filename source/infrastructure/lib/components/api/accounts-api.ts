@@ -12,6 +12,7 @@ import {
   RestApiResourceProps,
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
+import { isGovCloudAccountProvisioningEnabled } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import {
@@ -90,6 +91,9 @@ export class AccountsApi {
           ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
           IDC_ACCOUNT_ID: props.idcAccountId,
           HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
+          ...(isGovCloudAccountProvisioningEnabled(scope)
+            ? { GOVCLOUD_PROVISIONING_ENABLED: "true" }
+            : {}),
         },
         logGroup: restApi.logGroup,
         envSchema: AccountLambdaEnvironmentSchema,

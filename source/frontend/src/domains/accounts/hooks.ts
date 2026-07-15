@@ -40,6 +40,13 @@ export const useAddAccount = (options?: { skipInvalidation?: boolean }) => {
   });
 };
 
+export const useCreateGovCloudAccount = () => {
+  return useMutation({
+    mutationFn: async (request: { accountName: string; email: string }) =>
+      await new AccountService().createGovCloudAccount(request),
+  });
+};
+
 export const useEjectAccount = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({

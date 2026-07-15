@@ -135,6 +135,13 @@ export const GlobalConfigForUISchema = GlobalConfigSchema.extend({
     .array(z.string())
     .nonempty()
     .describe("Isb Managed Regions"),
+  // Deploy-time flag surfaced to the UI so the "Create GovCloud Account" flow
+  // is shown only when cross-partition provisioning is enabled. Injected at
+  // request time (not stored in AppConfig), like isbManagedRegions. Defaults to
+  // false so commercial deployments never see the feature.
+  govCloudProvisioningEnabled: z
+    .boolean()
+    .describe("Whether GovCloud account provisioning is enabled"),
   auth: AuthSchema.omit({
     idpAudience: true,
     idpSignInUrl: true,
@@ -150,6 +157,7 @@ export type GlobalConfigForUI = z.infer<typeof GlobalConfigForUISchema>;
 export function getGlobalConfigForUI(
   globalConfig: GlobalConfig,
   regions: string[],
+  govCloudProvisioningEnabled = false,
 ): GlobalConfigForUI {
   const { notification, auth, ...rest } = globalConfig;
   const {
@@ -163,5 +171,6 @@ export function getGlobalConfigForUI(
     ...rest,
     auth: restAuth,
     isbManagedRegions: [regions[0]!, ...regions.slice(1)],
+    govCloudProvisioningEnabled,
   };
 }

@@ -60,12 +60,19 @@ async function getAllConfigurationsHandler(
   );
   const { isbManagedRegions } = await accountPoolConfigStore.get();
 
+  const govCloudProvisioningEnabled =
+    context.env.GOVCLOUD_PROVISIONING_ENABLED === "true";
+
   return {
     statusCode: 200,
     body: JSON.stringify({
       status: "success",
       data: {
-        ...getGlobalConfigForUI(context.globalConfig, isbManagedRegions),
+        ...getGlobalConfigForUI(
+          context.globalConfig,
+          isbManagedRegions,
+          govCloudProvisioningEnabled,
+        ),
         ...context.reportingConfig,
       },
     }),
