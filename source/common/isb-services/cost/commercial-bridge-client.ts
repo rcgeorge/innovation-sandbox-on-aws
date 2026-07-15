@@ -41,6 +41,40 @@ export interface CommercialBridgeCostResponse {
   breakdown: Array<{ service: string; cost: number }>;
 }
 
+export interface CreateGovCloudAccountRequest {
+  accountName: string;
+  email: string;
+  roleName?: string;
+}
+
+export interface CreateGovCloudAccountResponse {
+  requestId: string;
+  status: string;
+  message?: string;
+}
+
+export interface GovCloudAccountStatusResponse {
+  requestId: string;
+  status: string; // IN_PROGRESS | SUCCEEDED | FAILED | UNKNOWN
+  govCloudAccountId?: string;
+  commercialAccountId?: string;
+  message?: string;
+}
+
+export interface AcceptInvitationRequest {
+  govCloudAccountId: string;
+  handshakeId: string;
+  govCloudRegion: string;
+  commercialLinkedAccountId: string;
+}
+
+export interface AcceptInvitationResponse {
+  status: string;
+  handshakeId: string;
+  govCloudAccountId: string;
+  handshakeState?: string;
+}
+
 interface RolesAnywhereCredentials {
   AccessKeyId: string;
   SecretAccessKey: string;
@@ -96,6 +130,59 @@ export class CommercialBridgeClient {
     }
 
     return (await response.json()) as CommercialBridgeCostResponse;
+  }
+
+  /**
+   * Initiate creation of a paired GovCloud + commercial account. Returns
+   * immediately with a requestId to poll via getGovCloudAccountStatus.
+   */
+  async createGovCloudAccount(
+    params: CreateGovCloudAccountRequest,
+  ): Promise<CreateGovCloudAccountResponse> {
+    const response = await this.makeSignedRequest(
+      "POST",
+      "/govcloud-accounts",
+      params,
+    );
+    if (!response.ok) {
+      throw new CommercialBridgeApiError(
+        `Failed to create GovCloud account: ${response.status} ${await response.text()}`,
+      );
+    }
+    return (await response.json()) as CreateGovCloudAccountResponse;
+  }
+
+  /** Poll the status of a GovCloud account-creation request. */
+  async getGovCloudAccountStatus(
+    requestId: string,
+  ): Promise<GovCloudAccountStatusResponse> {
+    const response = await this.makeSignedRequest(
+      "GET",
+      `/govcloud-accounts/${encodeURIComponent(requestId)}`,
+    );
+    if (!response.ok) {
+      throw new CommercialBridgeApiError(
+        `Failed to get GovCloud account status: ${response.status}`,
+      );
+    }
+    return (await response.json()) as GovCloudAccountStatusResponse;
+  }
+
+  /** Accept a GovCloud org invitation via the cross-partition bridge. */
+  async acceptInvitation(
+    params: AcceptInvitationRequest,
+  ): Promise<AcceptInvitationResponse> {
+    const response = await this.makeSignedRequest(
+      "POST",
+      "/govcloud-accounts/accept-invitation",
+      params,
+    );
+    if (!response.ok) {
+      throw new CommercialBridgeApiError(
+        `Failed to accept invitation: ${response.status} ${await response.text()}`,
+      );
+    }
+    return (await response.json()) as AcceptInvitationResponse;
   }
 
   private async makeSignedRequest(

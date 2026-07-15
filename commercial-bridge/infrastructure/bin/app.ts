@@ -23,10 +23,16 @@ const allowedCn =
   process.env.ROLES_ANYWHERE_ALLOWED_CN ??
   "govcloud-commercial-bridge";
 
+const enableAccountProvisioning =
+  app.node.tryGetContext("enableAccountProvisioning") === true ||
+  app.node.tryGetContext("enableAccountProvisioning") === "true" ||
+  process.env.ENABLE_ACCOUNT_PROVISIONING === "true";
+
 new CommercialBridgeCostStack(app, "CommercialBridge-Cost", {
   env,
   description:
     "Commercial-partition cost API for Innovation Sandbox GovCloud deployments (SO0284)",
   caCertificatePem,
   allowedCn,
+  enableAccountProvisioning,
 });

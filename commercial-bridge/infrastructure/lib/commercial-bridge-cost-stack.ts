@@ -33,6 +33,12 @@ export interface CommercialBridgeCostStackProps extends cdk.StackProps {
    * Client-certificate common name allowed to assume the bridge role.
    */
   allowedCn: string;
+  /**
+   * When true, also deploy the GovCloud account-provisioning endpoints
+   * (POST/GET /govcloud-accounts, POST /govcloud-accounts/accept-invitation).
+   * Defaults to false — the bridge is cost-only unless provisioning is wanted.
+   */
+  enableAccountProvisioning?: boolean;
 }
 
 export class CommercialBridgeCostStack extends cdk.Stack {
@@ -89,6 +95,91 @@ export class CommercialBridgeCostStack extends cdk.Stack {
     costInfo.addMethod("POST", new LambdaIntegration(costLambda), {
       authorizationType: AuthorizationType.IAM,
     });
+
+    // ─── GovCloud account provisioning endpoints (optional) ──────────────────
+
+    if (props.enableAccountProvisioning) {
+      const accountCreationLambda = new NodejsFunction(
+        this,
+        "AccountCreationFunction",
+        {
+          runtime: Runtime.NODEJS_22_X,
+          entry: path.join(
+            __dirname,
+            "..",
+            "..",
+            "lambdas",
+            "account-creation",
+            "src",
+            "handler.ts",
+          ),
+          handler: "handler",
+          timeout: cdk.Duration.seconds(30),
+          memorySize: 256,
+        },
+      );
+      accountCreationLambda.addToRolePolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: [
+            "organizations:CreateGovCloudAccount",
+            "organizations:DescribeCreateAccountStatus",
+            "organizations:ListCreateAccountStatus",
+          ],
+          resources: ["*"], // Organizations account-creation is not resource-scoped
+        }),
+      );
+
+      const acceptInvitationLambda = new NodejsFunction(
+        this,
+        "AcceptInvitationFunction",
+        {
+          runtime: Runtime.NODEJS_22_X,
+          entry: path.join(
+            __dirname,
+            "..",
+            "..",
+            "lambdas",
+            "accept-invitation",
+            "src",
+            "handler.ts",
+          ),
+          handler: "handler",
+          timeout: cdk.Duration.seconds(60),
+          memorySize: 256,
+        },
+      );
+      // Assume OrganizationAccountAccessRole in linked/GovCloud accounts only.
+      acceptInvitationLambda.addToRolePolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ["sts:AssumeRole"],
+          resources: ["arn:*:iam::*:role/OrganizationAccountAccessRole"],
+        }),
+      );
+
+      const govCloudAccounts = api.root.addResource("govcloud-accounts");
+      govCloudAccounts.addMethod(
+        "POST",
+        new LambdaIntegration(accountCreationLambda),
+        { authorizationType: AuthorizationType.IAM },
+      );
+      govCloudAccounts.addMethod(
+        "GET",
+        new LambdaIntegration(accountCreationLambda),
+        { authorizationType: AuthorizationType.IAM },
+      );
+      govCloudAccounts
+        .addResource("{requestId}")
+        .addMethod("GET", new LambdaIntegration(accountCreationLambda), {
+          authorizationType: AuthorizationType.IAM,
+        });
+      govCloudAccounts
+        .addResource("accept-invitation")
+        .addMethod("POST", new LambdaIntegration(acceptInvitationLambda), {
+          authorizationType: AuthorizationType.IAM,
+        });
+    }
 
     new cdk.CfnOutput(this, "CommercialBridgeApiUrl", {
       value: api.url,
