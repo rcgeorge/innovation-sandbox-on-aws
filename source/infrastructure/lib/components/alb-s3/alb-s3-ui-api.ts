@@ -11,15 +11,12 @@
  * commercial CloudfrontUiApi construct is used and this code is never
  * instantiated.
  */
-import {
-  CfnOutput,
-  Duration,
-  RemovalPolicy,
-} from "aws-cdk-lib";
+import { CfnOutput, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
 import { RestApi as ApiGatewayRestApi } from "aws-cdk-lib/aws-apigateway";
 import { Certificate } from "aws-cdk-lib/aws-certificatemanager";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import {
+  ApplicationListenerRule,
   ApplicationLoadBalancer,
   ApplicationProtocol,
   ApplicationTargetGroup,
@@ -46,8 +43,10 @@ import { execSync } from "child_process";
 import { existsSync, rmSync } from "fs-extra";
 import path from "path";
 
+import { ApplyRuleTransformsLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/apply-rule-transforms-lambda-environment.js";
 import { EndpointEniSyncLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/endpoint-eni-sync-lambda-environment.js";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function-custom-resource";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import { IsbLogGroups } from "@amzn/innovation-sandbox-infrastructure/components/observability/log-groups";
 import { Waf } from "@amzn/innovation-sandbox-infrastructure/components/api/waf";
@@ -247,10 +246,22 @@ export class AlbS3UiApi extends Construct {
     });
 
     // ─── Listener + Rules with Transforms ────────────────────────────────────
+    //
+    // ALB rule transforms cannot be attached to a listener's *default* rule, so
+    // both the SPA and API paths are explicit priority rules. The default
+    // action returns a fixed 404. The transforms themselves are applied by a
+    // custom resource (below) because CDK L2 does not yet expose the transform
+    // API.
 
     const certificateArn =
       props.certificateArn ?? scope.node.tryGetContext("certificateArn");
 
+    const fixed404 = ListenerAction.fixedResponse(404, {
+      contentType: "text/plain",
+      messageBody: "Not Found",
+    });
+
+    let listener;
     if (certificateArn) {
       const certificate = Certificate.fromCertificateArn(
         this,
@@ -258,19 +269,11 @@ export class AlbS3UiApi extends Construct {
         certificateArn,
       );
 
-      // HTTPS listener: default action serves static SPA from S3
-      const httpsListener = this.loadBalancer.addListener("HttpsListener", {
+      listener = this.loadBalancer.addListener("HttpsListener", {
         port: 443,
         protocol: ApplicationProtocol.HTTPS,
         certificates: [certificate],
-        defaultAction: ListenerAction.forward([s3TargetGroup]),
-      });
-
-      // /api/* rule: forward to API Gateway target group
-      httpsListener.addAction("ApiRule", {
-        priority: 10,
-        conditions: [ListenerCondition.pathPatterns(["/api/*"])],
-        action: ListenerAction.forward([apiTargetGroup]),
+        defaultAction: fixed404,
       });
 
       // HTTP → HTTPS redirect
@@ -285,46 +288,76 @@ export class AlbS3UiApi extends Construct {
       });
     } else {
       // HTTP-only (dev/test mode)
-      const httpListener = this.loadBalancer.addListener("HttpListener", {
+      listener = this.loadBalancer.addListener("HttpListener", {
         port: 80,
         protocol: ApplicationProtocol.HTTP,
-        defaultAction: ListenerAction.forward([s3TargetGroup]),
-      });
-
-      httpListener.addAction("ApiRule", {
-        priority: 10,
-        conditions: [ListenerCondition.pathPatterns(["/api/*"])],
-        action: ListenerAction.forward([apiTargetGroup]),
+        defaultAction: fixed404,
       });
     }
 
-    // ─── NOTE: Rule transforms (host-header-rewrite, url-rewrite) ────────────
-    // CDK L2 does not yet expose the ALB rule transform API. These must be
-    // applied post-deployment via a custom resource or CLI call:
-    //
-    //   aws elbv2 modify-rule --rule-arn <api-rule-arn> --actions '[...]' \
-    //     --transforms '[
-    //       {"Type":"host-header-rewrite","HostHeaderRewriteConfig":{"Rewrites":[
-    //         {"Regex":"{{^.*$}}","Replace":"{{<apiId>.execute-api.<region>.amazonaws.com}}"}
-    //       ]}},
-    //       {"Type":"url-rewrite","UrlRewriteConfig":{"Rewrites":[
-    //         {"Regex":"{{^/api/(.*)$}}","Replace":"{{/prod/$1}}"}
-    //       ]}}
-    //     ]'
-    //
-    // For the SPA rule (default action), the url-rewrite for deep links:
-    //   {"Type":"url-rewrite","UrlRewriteConfig":{"Rewrites":[
-    //     {"Regex":"{{^/[^.]*$}}","Replace":"{{/index.html}}"}
-    //   ]}}
-    //
-    // And the host-header-rewrite to S3:
-    //   {"Type":"host-header-rewrite","HostHeaderRewriteConfig":{"Rewrites":[
-    //     {"Regex":"{{^.*$}}","Replace":"{{<bucket>.s3.<region>.amazonaws.com}}"}
-    //   ]}}
-    //
-    // TODO(Phase 2 follow-up): Implement as a CDK custom resource so these are
-    // applied automatically during deployment. Tracking as a post-synth-verify
-    // item in the runtime checklist.
+    // API rule (higher priority): /api/* → API Gateway target group
+    const apiRule = new ApplicationListenerRule(this, "ApiListenerRule", {
+      listener,
+      priority: 10,
+      conditions: [ListenerCondition.pathPatterns(["/api/*"])],
+      action: ListenerAction.forward([apiTargetGroup]),
+    });
+
+    // SPA rule (catch-all): everything else → S3 target group
+    const spaRule = new ApplicationListenerRule(this, "SpaListenerRule", {
+      listener,
+      priority: 20,
+      conditions: [ListenerCondition.pathPatterns(["/*"])],
+      action: ListenerAction.forward([s3TargetGroup]),
+    });
+
+    // ─── Rule Transforms (applied via custom resource) ───────────────────────
+    // CDK L2 does not expose ALB rule transforms, so a custom resource calls
+    // elbv2 ModifyRule. See apply-rule-transforms-handler.ts.
+    const region = Stack.of(this).region;
+    const s3EndpointHost = `${spaBucket.bucketName}.s3.${region}.${Stack.of(this).urlSuffix}`;
+    const apiGatewayHost = `${props.restApi.restApiId}.execute-api.${region}.${Stack.of(this).urlSuffix}`;
+
+    const transformsCr = new IsbLambdaFunctionCustomResource(
+      this,
+      "ApplyRuleTransforms",
+      {
+        description:
+          "Applies ALB host-header-rewrite and url-rewrite transforms to the SPA and API listener rules",
+        entry: path.join(
+          __dirname,
+          "..",
+          "..",
+          "..",
+          "..",
+          "lambdas",
+          "custom-resources",
+          "endpoint-eni-sync",
+          "src",
+          "apply-rule-transforms-handler.ts",
+        ),
+        handler: "handler",
+        namespace: props.namespace,
+        timeout: Duration.seconds(30),
+        environment: {},
+        envSchema: ApplyRuleTransformsLambdaEnvironmentSchema,
+        customResourceType: "Custom::AlbRuleTransforms",
+        customResourceProperties: {
+          SpaRuleArn: spaRule.listenerRuleArn,
+          S3EndpointHost: s3EndpointHost,
+          ApiRuleArn: apiRule.listenerRuleArn,
+          ApiGatewayHost: apiGatewayHost,
+          ApiStage: props.restApi.deploymentStage.stageName,
+        },
+      },
+    );
+
+    transformsCr.lambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["elasticloadbalancing:ModifyRule"],
+        resources: ["*"], // rule ARNs are not known until listener rules exist
+      }),
+    );
 
     // ─── WAF (re-homed to the ALB) ──────────────────────────────────────────
 

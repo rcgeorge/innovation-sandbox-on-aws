@@ -100,11 +100,27 @@ New construct `AlbS3UiApi` parallel to `CloudfrontUiApi`; commercial path
 untouched. Components: VPC (2 AZ, isolated subnets); S3 interface endpoint +
 `execute-api` interface endpoint; internal ALB (HTTPS via ACM, HTTP→HTTPS
 redirect); two IP target groups (S3 ENIs, API GW ENIs) kept current by an
-ENI-IP sync Lambda; listener rules using `host-header-rewrite` + `url-rewrite`
-transforms for both the SPA and `/api` paths (see hosting design above); private
-API Gateway (`EndpointType.PRIVATE` — already REGIONAL-gated in Phase 0 becomes
-PRIVATE here); SPA `BucketDeployment` to the S3 bucket; WAF re-homed to the ALB.
-Frontend and SAML config unchanged (same-origin preserved).
+ENI-IP sync Lambda (scheduled every 5 min); explicit listener rules — API at
+priority 10 (`/api/*`), SPA at priority 20 (`/*`), default action a fixed 404
+(transforms cannot attach to a default rule); SPA `BucketDeployment` to the S3
+bucket; WAF re-homed to the ALB. Frontend and SAML config unchanged (same-origin
+preserved).
+
+**Rule transforms** (`host-header-rewrite`, `url-rewrite`) are applied by a
+custom resource (`Custom::AlbRuleTransforms`) because CDK L2 does not expose the
+transform API. The handler (`apply-rule-transforms-handler.ts`) calls elbv2
+`ModifyRule` on Create/Update:
+- SPA rule: Host → `{bucket}.s3.{region}.{urlSuffix}`; `^/[^.]*$` → `/index.html`
+  (deep-link fallback; `*.js`/`*.css` don't match and pass through).
+- API rule: Host → `{apiId}.execute-api.{region}.{urlSuffix}`; `^/api/(.*)$` →
+  `/{stage}/$1` (strip prefix, inject stage).
+Requires `@aws-sdk/client-elastic-load-balancing-v2` (added to the dependencies
+layer, pinned `^3.1087.0` — the version where the Transforms API landed).
+
+**Still open**: API Gateway is still REGIONAL in `alb-s3` mode (Phase 0). Making
+it `EndpointType.PRIVATE` with an `execute-api` resource policy is the
+security-correct final step; deferred because the endpoint-policy → VPC-endpoint
+reference needs a deployment-ordering strategy.
 
 ### Phase 3 — Cost bridge, fully wired (`enableCommercialBridge=true`)
 `ICostService` + `CommercialBridgeCostService` + `CommercialBridgeClient`;

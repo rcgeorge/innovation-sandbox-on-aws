@@ -17,6 +17,7 @@
     "@aws-sdk/client-cost-explorer": "^3.656.0",
     "@aws-sdk/client-dynamodb": "^3.982.0",
     "@aws-sdk/client-ec2": "^3.665.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "^3.1087.0",
     "@aws-sdk/client-eventbridge": "^3.656.0",
     "@aws-sdk/client-identitystore": "^3.654.0",
     "@aws-sdk/client-organizations": "^3.654.0",
