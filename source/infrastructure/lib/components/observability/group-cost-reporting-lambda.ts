@@ -9,6 +9,12 @@ import {
   getOrgMgtRoleArn,
   IntermediateRole,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
+import {
+  commercialBridgeAccountEnv,
+  commercialBridgeEnv,
+  grantCommercialBridgeAccess,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/commercial-bridge-config";
+import { isCommercialBridgeEnabled } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
 import { grantIsbDbReadOnly } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
@@ -88,6 +94,11 @@ export class GroupCostReportingLambda extends Construct {
             props.namespace,
             props.orgMgtAccountId,
           ),
+          ...commercialBridgeAccountEnv(
+            scope,
+            IsbComputeStack.sharedSpokeConfig.data.accountTable,
+          ),
+          ...commercialBridgeEnv(scope),
         },
         logGroup: IsbComputeResources.globalLogGroup,
         envSchema: GroupCostReportingLambdaEnvironmentSchema,
@@ -96,11 +107,15 @@ export class GroupCostReportingLambda extends Construct {
       },
     );
 
-    grantIsbDbReadOnly(
-      scope,
-      groupCostReportingLambda,
-      IsbComputeStack.sharedSpokeConfig.data.leaseTable,
-    );
+    // In bridge mode the cost service also reads the account table (GovCloud →
+    // commercial mapping). grantIsbDbReadOnly takes all tables in one call to
+    // avoid a duplicate policy construct id.
+    const readOnlyTables = [IsbComputeStack.sharedSpokeConfig.data.leaseTable];
+    if (isCommercialBridgeEnabled(scope)) {
+      readOnlyTables.push(IsbComputeStack.sharedSpokeConfig.data.accountTable);
+    }
+    grantIsbDbReadOnly(scope, groupCostReportingLambda, ...readOnlyTables);
+    grantCommercialBridgeAccess(scope, groupCostReportingLambda.lambdaFunction);
     props.isbEventBus.grantPutEventsTo(groupCostReportingLambda.lambdaFunction);
     reportBucket.grantWrite(groupCostReportingLambda.lambdaFunction);
     IsbKmsKeys.get(scope, props.namespace).grantDecrypt(

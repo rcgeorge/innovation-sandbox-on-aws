@@ -66,7 +66,7 @@ export async function generateReport(
   logger.debug(`Running last month's cost report on ${DateTime.now().toISO()}`);
   const eventBridgeClient = IsbServices.isbEventBridge(context.env);
   const leaseStore = IsbServices.leaseStore(context.env);
-  const costExplorerService = IsbServices.costExplorer(
+  const costExplorerService = IsbServices.costService(
     context.env,
     fromTemporaryIsbOrgManagementCredentials(context.env),
   );

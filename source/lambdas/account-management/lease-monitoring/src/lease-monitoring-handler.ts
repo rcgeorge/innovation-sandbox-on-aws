@@ -48,7 +48,7 @@ export async function performAccountMonitoringScan(
   context: Context & ValidatedEnvironment<LeaseMonitoringEnvironment>,
 ): Promise<string> {
   const isbEventBridge = IsbServices.isbEventBridge(context.env);
-  const costExplorerService = IsbServices.costExplorer(
+  const costExplorerService = IsbServices.costService(
     context.env,
     fromTemporaryIsbOrgManagementCredentials(context.env),
   );

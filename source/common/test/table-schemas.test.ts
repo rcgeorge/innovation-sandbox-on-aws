@@ -66,10 +66,13 @@ test("Lease Schema Version", () => {
 
 test("SandboxAccount Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
+  //v2: added optional commercialLinkedAccountId (GovCloud cost mapping). The
+  //field is optional, so v1 records remain valid without data migration (see
+  //sandbox-account-migration-test.ts).
   expect(objectHash.sha1(SandboxAccountSchema.shape)).toMatchInlineSnapshot(
-    `"48aa14f06a1a3c0c3722917f076486bd2325db9d"`,
+    `"c3c1141be3864067f753f0fccd36593f7219c0bc"`,
   );
-  expect(SandboxAccountSchemaVersion).toEqual(1);
+  expect(SandboxAccountSchemaVersion).toEqual(2);
 });
 
 test("Blueprint Schema Version", () => {

@@ -9,10 +9,19 @@ import path from "path";
 import { LeaseMonitoringEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-monitoring-environment.js";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import {
+  commercialBridgeAccountEnv,
+  commercialBridgeEnv,
+  grantCommercialBridgeAccess,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/commercial-bridge-config";
+import { isCommercialBridgeEnabled } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
+import {
   IntermediateRole,
   getOrgMgtRoleArn,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
-import { grantIsbDbReadWrite } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
+import {
+  grantIsbDbReadOnly,
+  grantIsbDbReadWrite,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
@@ -53,6 +62,13 @@ export class LeaseMonitoringLambda extends Construct {
           props.namespace,
           props.orgMgtAccountId,
         ),
+        // Account table + commercial bridge config only in GovCloud (bridge
+        // mode); absent in commercial so its template is unchanged.
+        ...commercialBridgeAccountEnv(
+          scope,
+          IsbComputeStack.sharedSpokeConfig.data.accountTable,
+        ),
+        ...commercialBridgeEnv(scope),
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: LeaseMonitoringEnvironmentSchema,
@@ -74,6 +90,16 @@ export class LeaseMonitoringLambda extends Construct {
       lambda,
       IsbComputeStack.sharedSpokeConfig.data.leaseTable,
     );
+    // The unified cost service reads the account table to map GovCloud
+    // accounts to their commercial linked account — only needed in bridge mode.
+    if (isCommercialBridgeEnabled(scope)) {
+      grantIsbDbReadOnly(
+        scope,
+        lambda,
+        IsbComputeStack.sharedSpokeConfig.data.accountTable,
+      );
+    }
+    grantCommercialBridgeAccess(scope, lambda.lambdaFunction);
 
     new CfnSchedule(scope, "LeaseMonitoringScheduledEvent", {
       description: "triggers LeaseMonitoring every hour",

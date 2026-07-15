@@ -37,7 +37,7 @@ export async function scanAccounts(
 ) {
   logger.debug(`Running last month's cost report on ${DateTime.now().toISO()}`);
   const accountStore = IsbServices.sandboxAccountStore(context.env);
-  const costExplorerService = IsbServices.costExplorer(
+  const costExplorerService = IsbServices.costService(
     context.env,
     fromTemporaryIsbOrgManagementCredentials(context.env),
   );

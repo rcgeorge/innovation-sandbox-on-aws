@@ -7,7 +7,10 @@ import {
   createEventBridgeEvent,
   mockContext,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
-import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import {
+  bulkStubEnv,
+  withoutCommercialBridgeConfig,
+} from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
 import { DateTime } from "luxon";
 import {
   afterAll,
@@ -20,9 +23,11 @@ import {
   vi,
 } from "vitest";
 
-const testEnv = generateSchemaData(GroupCostReportingLambdaEnvironmentSchema, {
-  REPORT_BUCKET_NAME: "test-bucket",
-});
+const testEnv = withoutCommercialBridgeConfig(
+  generateSchemaData(GroupCostReportingLambdaEnvironmentSchema, {
+    REPORT_BUCKET_NAME: "test-bucket",
+  }),
+);
 
 let generateReport: any;
 
@@ -80,6 +85,7 @@ beforeAll(async () => {
     IsbServices: {
       leaseStore: vi.fn().mockReturnValue(mockLeaseStore),
       costExplorer: vi.fn().mockReturnValue(mockCostExplorerService),
+      costService: vi.fn().mockReturnValue(mockCostExplorerService),
       isbEventBridge: vi.fn().mockReturnValue(mockEventBridgeClient),
     },
   }));

@@ -28,7 +28,10 @@ import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clien
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { mockContext } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
-import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import {
+  bulkStubEnv,
+  withoutCommercialBridgeConfig,
+} from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
 import { now } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import { performAccountMonitoringScan } from "@amzn/innovation-sandbox-lease-monitoring/lease-monitoring-handler.js";
 
@@ -42,7 +45,9 @@ const costsMock = {
 
 const mockSendIsbEvents = vi.fn();
 
-const testEnv = generateSchemaData(LeaseMonitoringEnvironmentSchema);
+const testEnv = withoutCommercialBridgeConfig(
+  generateSchemaData(LeaseMonitoringEnvironmentSchema),
+);
 
 beforeEach(() => {
   bulkStubEnv(testEnv);

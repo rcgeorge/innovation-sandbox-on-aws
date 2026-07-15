@@ -11,40 +11,21 @@ import {
 import { DateTime, DateTimeUnit } from "luxon";
 import pThrottle from "p-throttle";
 
+import { AccountsCostReport } from "@amzn/innovation-sandbox-commons/isb-services/cost/accounts-cost-report.js";
+import { ICostService } from "@amzn/innovation-sandbox-commons/isb-services/cost/cost-service.js";
+
+// Re-exported for backwards compatibility: AccountsCostReport moved to its own
+// module (cost/accounts-cost-report.ts) so the ICostService interface and the
+// commercial-bridge implementation can use it without importing the Cost
+// Explorer SDK. Existing imports of AccountsCostReport from this file continue
+// to work.
+export { AccountsCostReport };
+
 const logger = new Logger();
 export const COST_EXPLORER_CONFIG = {
   MAX_ACCOUNTS_IN_FILTER: 199,
   MAX_DAYS_FOR_HOURLY: 14,
 };
-
-export class AccountsCostReport {
-  readonly costMap: Record<string, number>;
-
-  constructor() {
-    this.costMap = {};
-  }
-  public addCost(accountId: string, toAdd: number) {
-    if (this.costMap[accountId]) {
-      this.costMap[accountId] = this.costMap[accountId] + toAdd;
-    } else {
-      this.costMap[accountId] = toAdd;
-    }
-  }
-  public getCost(accountId: string): number {
-    return this.costMap[accountId] ?? 0;
-  }
-  public merge(accountsCost: AccountsCostReport) {
-    for (const [key, value] of Object.entries(accountsCost.costMap)) {
-      this.addCost(key, value);
-    }
-  }
-
-  public totalCost() {
-    return Object.entries(this.costMap).reduce((acc, [_, value]) => {
-      return acc + value;
-    }, 0);
-  }
-}
 
 function* batch<T>(
   array: T[],
@@ -55,7 +36,7 @@ function* batch<T>(
   }
 }
 
-export class CostExplorerService {
+export class CostExplorerService implements ICostService {
   readonly costExplorerClient: CostExplorerClient;
 
   constructor(props: { costExplorerClient: CostExplorerClient }) {

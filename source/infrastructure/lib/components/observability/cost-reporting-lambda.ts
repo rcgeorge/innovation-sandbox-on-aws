@@ -13,6 +13,10 @@ import { Construct } from "constructs";
 import path from "path";
 
 import { CostReportingLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/cost-reporting-lambda-environment.js";
+import {
+  commercialBridgeEnv,
+  grantCommercialBridgeAccess,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/commercial-bridge-config";
 import { grantIsbDbReadOnly } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import {
   getIsbTagValue,
@@ -61,6 +65,7 @@ export class CostReportingLambda extends Construct {
         IDC_ACCOUNT_ID: props.idcAccountId,
         ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
         HUB_ACCOUNT_ID: `${Stack.of(scope).account}`,
+        ...commercialBridgeEnv(scope),
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: CostReportingLambdaEnvironmentSchema,
@@ -83,6 +88,8 @@ export class CostReportingLambda extends Construct {
       costReportingLambda,
       IsbComputeStack.sharedSpokeConfig.data.accountTable,
     );
+
+    grantCommercialBridgeAccess(scope, costReportingLambda.lambdaFunction);
 
     new CfnSchedule(scope, "CostReportingScheduledEvent", {
       description: "triggers Cost Monitoring on the forth day of every month",

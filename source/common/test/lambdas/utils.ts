@@ -12,6 +12,24 @@ export const bulkStubEnv = (envVars: Record<string, string>) => {
   }
 };
 
+/**
+ * generateSchemaData populates optional fields, which for cost-consuming
+ * lambdas would spuriously satisfy isCommercialBridgeConfigured() and route
+ * tests through the commercial bridge. Clearing these keeps a generated env on
+ * the commercial Cost Explorer path (the default for non-GovCloud deployments).
+ */
+export const withoutCommercialBridgeConfig = <T extends Record<string, any>>(
+  env: T,
+): T => ({
+  ...env,
+  COMMERCIAL_BRIDGE_API_URL: undefined,
+  COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN: undefined,
+  COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN: undefined,
+  COMMERCIAL_BRIDGE_PROFILE_ARN: undefined,
+  COMMERCIAL_BRIDGE_ROLE_ARN: undefined,
+  COMMERCIAL_BRIDGE_GOVCLOUD_REGIONS: undefined,
+});
+
 export const mockAppConfigMiddleware = (
   globalConfig: GlobalConfig,
   reportingConfig?: ReportingConfig,

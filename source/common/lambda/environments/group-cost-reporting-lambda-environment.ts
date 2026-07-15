@@ -4,10 +4,14 @@
 import { z } from "zod";
 
 import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
+import { CommercialBridgeEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/commercial-bridge-environment.js";
 
 export const GroupCostReportingLambdaEnvironmentSchema =
-  BaseLambdaEnvironmentSchema.extend({
+  BaseLambdaEnvironmentSchema.merge(CommercialBridgeEnvironmentSchema).extend({
     LEASE_TABLE_NAME: z.string(),
+    // Used by the unified cost service (GovCloud account mapping). Only set in
+    // bridge mode; optional so commercial deployments validate.
+    ACCOUNT_TABLE_NAME: z.string().optional(),
     INTERMEDIATE_ROLE_ARN: z.string(),
     ORG_MGT_ROLE_ARN: z.string(),
     REPORT_BUCKET_NAME: z.string(),

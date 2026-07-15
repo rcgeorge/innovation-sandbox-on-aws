@@ -12,9 +12,11 @@ import {
 } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
-export const SandboxAccountSchemaVersion = 1;
+// v2: added optional commercialLinkedAccountId (GovCloud cost mapping).
+export const SandboxAccountSchemaVersion = 2;
 
-// Define supported version range for backwards compatibility
+// Define supported version range for backwards compatibility. v1 records (which
+// predate commercialLinkedAccountId) remain valid because the field is optional.
 const SandboxAccountSupportedVersionsSchema = createVersionRangeSchema(
   1,
   SandboxAccountSchemaVersion,
@@ -50,6 +52,12 @@ export const SandboxAccountSchema = z
       .optional(),
     status: SandboxAccountStatusSchema,
     driftAtLastScan: z.boolean().optional(),
+    // For GovCloud deployments: the commercial (aws partition) linked account
+    // whose bill carries this GovCloud account's usage. Used by the commercial
+    // bridge cost service to map a GovCloud account id to the commercial
+    // account Cost Explorer reports against. Undefined for commercial
+    // deployments and for GovCloud accounts using bridge auto-discovery.
+    commercialLinkedAccountId: AwsAccountIdSchema.optional(),
   })
   .merge(SandboxAccountItemWithMetadataSchema)
   .strict();

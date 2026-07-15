@@ -127,12 +127,32 @@ mode passes no endpoint, so it keeps its default endpoint type and no policy
 (synth output unchanged — verified by snapshot tests).
 
 ### Phase 3 — Cost bridge, fully wired (`enableCommercialBridge=true`)
-`ICostService` + `CommercialBridgeCostService` + `CommercialBridgeClient`;
-factory selects impl by partition/flag. `commercialLinkedAccountId?` on
-sandbox-account schema. Commercial cost API deployed to commercial partition with
-IAM Roles Anywhere auth + `roles-anywhere-helper` layer. Connect into
-lease-monitoring + cost-reporting handlers (env vars, Secrets Manager + DynamoDB
-perms) replacing the mock $0 report.
+
+**GovCloud side (done):**
+- `AccountsCostReport` extracted to `isb-services/cost/accounts-cost-report.ts`
+  (no SDK import); `cost-explorer-service.ts` re-exports it for back-compat.
+- `ICostService` interface (`isb-services/cost/cost-service.ts`) covering the
+  three externally-used methods: `getCostForLeases`, `getCostForRange`,
+  `getDailyCostsByAccount`. `CostExplorerService implements ICostService`.
+- `CommercialBridgeClient` (Roles Anywhere only — no API-key path; uses
+  `execFileSync` not shell `execSync` to avoid injection) and
+  `CommercialBridgeCostService implements ICostService` (all three methods).
+- `IsbServices.costService()` factory selects the bridge impl when
+  `isCommercialBridgeConfigured(env)` (full Roles Anywhere set present),
+  otherwise Cost Explorer. The three cost lambdas now call `costService()`.
+- `commercialLinkedAccountId?` added to sandbox-account schema (v1→v2, optional;
+  migration test proves v1 records still validate).
+- CDK wiring via `commercial-bridge-config.ts` helper: bridge env vars +
+  `ACCOUNT_TABLE_NAME` + Secrets Manager read + account-table read added to
+  lease-monitoring, cost-reporting, group-cost-reporting **only when
+  enableCommercialBridge is set**. Commercial synth is byte-clean (verified: 0
+  `COMMERCIAL_BRIDGE` vars in a no-flag Compute template).
+
+**Commercial-partition side (remaining):** the `roles-anywhere-helper` Lambda
+layer (bundling `aws_signing_helper` at `/opt/bin/`) and the commercial-bridge
+cost API (API Gateway + `cost-information` Lambda querying Cost Explorer, with a
+Roles Anywhere trust anchor/profile) deployed to the commercial account. These
+are independently deployable cross-partition infrastructure.
 
 ### Phase 4 — Optional cross-partition provisioning (`enableGovCloudAccountProvisioning=true`, default off)
 Commercial-bridge account-creation + accept-invitation Lambdas, GovCloud

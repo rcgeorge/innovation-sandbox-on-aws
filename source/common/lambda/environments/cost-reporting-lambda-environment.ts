@@ -3,9 +3,10 @@
 import { z } from "zod";
 
 import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
+import { CommercialBridgeEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/commercial-bridge-environment.js";
 
 export const CostReportingLambdaEnvironmentSchema =
-  BaseLambdaEnvironmentSchema.extend({
+  BaseLambdaEnvironmentSchema.merge(CommercialBridgeEnvironmentSchema).extend({
     ACCOUNT_TABLE_NAME: z.string(),
     ISB_NAMESPACE: z.string(),
     INTERMEDIATE_ROLE_ARN: z.string(),

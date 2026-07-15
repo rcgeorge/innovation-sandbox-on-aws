@@ -22,6 +22,9 @@ import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import { BlueprintDeploymentService } from "@amzn/innovation-sandbox-commons/isb-services/blueprint-deployment-service.js";
 import { CostExplorerService } from "@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js";
+import { CommercialBridgeCostService } from "@amzn/innovation-sandbox-commons/isb-services/cost/commercial-bridge-cost-service.js";
+import { ICostService } from "@amzn/innovation-sandbox-commons/isb-services/cost/cost-service.js";
+import { isCommercialBridgeConfigured } from "@amzn/innovation-sandbox-commons/lambda/environments/commercial-bridge-environment.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import {
   LogArchivingService,
@@ -94,6 +97,20 @@ export namespace ServiceEnv {
 
   export type costExplorer = {
     USER_AGENT_EXTRA: string;
+  };
+
+  // The unified cost service: Cost Explorer in commercial, or the commercial
+  // bridge in GovCloud. Carries the sandbox account table (for GovCloud account
+  // → commercial account mapping) plus the optional commercial bridge config.
+  export type costService = {
+    USER_AGENT_EXTRA: string;
+    ACCOUNT_TABLE_NAME?: string;
+    COMMERCIAL_BRIDGE_API_URL?: string;
+    COMMERCIAL_BRIDGE_CLIENT_CERT_SECRET_ARN?: string;
+    COMMERCIAL_BRIDGE_TRUST_ANCHOR_ARN?: string;
+    COMMERCIAL_BRIDGE_PROFILE_ARN?: string;
+    COMMERCIAL_BRIDGE_ROLE_ARN?: string;
+    COMMERCIAL_BRIDGE_GOVCLOUD_REGIONS?: string;
   };
 
   export type emailService = {
@@ -220,6 +237,43 @@ export class IsbServices {
     env: ServiceEnv.costExplorer,
     credentials?: AwsCredentialIdentity | AwsCredentialIdentityProvider,
   ) {
+    return new CostExplorerService({
+      costExplorerClient: IsbClients.costExplorer(env, credentials),
+    });
+  }
+
+  /**
+   * The unified cost service. Returns the commercial bridge implementation when
+   * the full bridge configuration is present (GovCloud), otherwise the direct
+   * Cost Explorer implementation (commercial). Both satisfy ICostService, so
+   * callers are unaffected by which one is returned.
+   *
+   * `credentials` are used only by the Cost Explorer path (cross-account org
+   * management role); the bridge authenticates via its own IAM Roles Anywhere.
+   */
+  public static costService(
+    env: ServiceEnv.costService,
+    credentials?: AwsCredentialIdentity | AwsCredentialIdentityProvider,
+  ): ICostService {
+    if (isCommercialBridgeConfigured(env)) {
+      if (!env.ACCOUNT_TABLE_NAME) {
+        throw new Error(
+          "ACCOUNT_TABLE_NAME is required when the commercial bridge is configured " +
+            "(needed to map GovCloud accounts to their commercial linked account).",
+        );
+      }
+      return new CommercialBridgeCostService({
+        commercialBridgeEnv: env,
+        govCloudRegions: (env.COMMERCIAL_BRIDGE_GOVCLOUD_REGIONS ?? "")
+          .split(",")
+          .map((r) => r.trim())
+          .filter(Boolean),
+        sandboxAccountStore: IsbServices.sandboxAccountStore({
+          ACCOUNT_TABLE_NAME: env.ACCOUNT_TABLE_NAME,
+          USER_AGENT_EXTRA: env.USER_AGENT_EXTRA,
+        }),
+      });
+    }
     return new CostExplorerService({
       costExplorerClient: IsbClients.costExplorer(env, credentials),
     });
