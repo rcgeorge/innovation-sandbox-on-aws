@@ -148,11 +148,29 @@ mode passes no endpoint, so it keeps its default endpoint type and no policy
   enableCommercialBridge is set**. Commercial synth is byte-clean (verified: 0
   `COMMERCIAL_BRIDGE` vars in a no-flag Compute template).
 
-**Commercial-partition side (remaining):** the `roles-anywhere-helper` Lambda
-layer (bundling `aws_signing_helper` at `/opt/bin/`) and the commercial-bridge
-cost API (API Gateway + `cost-information` Lambda querying Cost Explorer, with a
-Roles Anywhere trust anchor/profile) deployed to the commercial account. These
-are independently deployable cross-partition infrastructure.
+**Commercial-partition side (done):**
+- `source/layers/roles-anywhere-helper/` — `build.sh` downloads the **arm64**
+  `aws_signing_helper` (the ISB Lambdas are arm64; the fork's amd64 build would
+  fail to exec) into `bin/` (gitignored, fetched at build time). The
+  `getRolesAnywhereLayer` construct packages it to `/opt/bin/` and is attached
+  to the three cost lambdas only in bridge mode.
+- `commercial-bridge/` — a standalone CDK app for the commercial partition:
+  `CommercialBridgeCostStack` = cost-information Lambda (Cost Explorer +
+  Organizations `ListCreateAccountStatus` auto-discovery) + a REGIONAL,
+  **IAM-authenticated** REST API (`POST /cost-info`; no API key / usage plan) +
+  an optional IAM Roles Anywhere trust anchor/profile/role scoped to the client
+  cert CN and `execute-api:Invoke` on `/cost-info`. `Access-Control-Allow-Origin: *`
+  from the fork was dropped (server-to-server SigV4, no browser origin).
+
+**Deploy note:** run `roles-anywhere-helper/build.sh`, deploy `commercial-bridge`
+to the commercial account, then set the bridge `-c` values (API URL + Roles
+Anywhere ARNs + GovCloud regions) and `enableCommercialBridge=true` on the
+GovCloud Compute deploy.
+
+**Verified:** commercial-bridge app typechecks + synths (with and without a CA);
+GovCloud Compute synth is byte-clean without the flag and gains the layer +
+secret grants + bridge env with it. Cost-service unit tests (5) pass; a UTC
+date-key bug was found and fixed. Full suite 1425 pass.
 
 ### Phase 4 — Optional cross-partition provisioning (`enableGovCloudAccountProvisioning=true`, default off)
 Commercial-bridge account-creation + accept-invitation Lambdas, GovCloud

@@ -1,9 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
-import { IFunction } from "aws-cdk-lib/aws-lambda";
+import { Function as LambdaFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 
+import { getRolesAnywhereLayer } from "@amzn/innovation-sandbox-infrastructure/components/roles-anywhere-layer";
 import { isCommercialBridgeEnabled } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
 
 /**
@@ -83,12 +84,16 @@ export function commercialBridgeAccountEnv(
 }
 
 /**
- * Grant the lambda permission to read the client-certificate secret used for
- * IAM Roles Anywhere. No-op when the bridge is disabled (commercial).
+ * In bridge mode: grant the lambda permission to read the client-certificate
+ * secret and attach the Roles Anywhere credential-helper layer. No-op when the
+ * bridge is disabled (commercial), so nothing is added to the function there.
+ *
+ * `lambdaFunction` must be a concrete Function (not IFunction) so the layer can
+ * be attached — all ISB cost lambdas satisfy this.
  */
 export function grantCommercialBridgeAccess(
   scope: Construct,
-  lambdaFunction: IFunction,
+  lambdaFunction: LambdaFunction,
 ): void {
   const config = readConfig(scope);
   if (!config) {
@@ -101,4 +106,5 @@ export function grantCommercialBridgeAccess(
       resources: [config.clientCertSecretArn],
     }),
   );
+  lambdaFunction.addLayers(getRolesAnywhereLayer(scope));
 }

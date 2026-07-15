@@ -95,7 +95,7 @@ export class CommercialBridgeCostService implements ICostService {
     // under the start date. Group cost reporting aggregates by group total, so
     // the group figures remain correct; only per-day granularity is lost.
     const result: Record<string, Record<string, number>> = {};
-    const dateKey = start.toFormat("yyyy-MM-dd");
+    const dateKey = start.toUTC().toFormat("yyyy-MM-dd");
 
     for (const accountId of accountIds) {
       const total = await this.queryAggregatedCost(accountId, start, end);
@@ -149,8 +149,10 @@ export class CommercialBridgeCostService implements ICostService {
           linkedAccountId: govCloudAccountId,
           isGovCloudAccountId: true,
           commercialAccountId,
-          startDate: start.toFormat("yyyy-MM-dd"),
-          endDate: end.toFormat("yyyy-MM-dd"),
+          // Cost Explorer date boundaries are UTC; normalize to avoid an
+          // off-by-one day when the Lambda runs in a non-UTC context.
+          startDate: start.toUTC().toFormat("yyyy-MM-dd"),
+          endDate: end.toUTC().toFormat("yyyy-MM-dd"),
           granularity: "DAILY",
           region,
         });
