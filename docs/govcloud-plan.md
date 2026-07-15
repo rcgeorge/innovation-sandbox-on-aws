@@ -47,22 +47,33 @@ Partition is **not** a flag — it is always the resolved `AWS::Partition` token
 - WAF is **regional, attached to the API Gateway stage**, and its IP-allowlist +
   rate rules key off `X-Forwarded-For`.
 
-## Hosting limits that shape the ALB + S3 design
+## Hosting design — ALB rule transforms (container-free, same-origin)
 
-- S3 **REST** endpoint (reachable over PrivateLink) has **no `index.html` error
-  fallback** → SPA deep-link refresh (`GET /leases/123`) 404s. Handled by a tiny
-  Lambda ALB target returning `index.html`.
-- ALB **cannot rewrite the Host header** → the SPA bucket is named to match the
-  internal domain so virtual-host/path addressing resolves without rewrite.
-- ALB **→ Lambda response ≤ 1 MB** (hard cap) → only the tiny `index.html`
-  router Lambda is on that path (well under 1 MB). JS bundles are served from S3,
-  not through Lambda.
-- S3 **interface endpoint ENI IPs are not static** → an ENI-IP sync Lambda keeps
-  the ALB target group current.
-- `/api/*` path: preserve same-origin by routing `/api/*` through the same ALB to
-  a **private API Gateway** deployed under an `/api` base-path mapping (ALB
-  cannot strip prefixes). Fallback if base-path mapping proves painful: split
-  origin via build-time `VITE_API_URL` + CORS + SAML ACS reconfig.
+ALB supports server-side listener-rule **transforms** (`host-header-rewrite`,
+`url-rewrite`), applied on forward to the target with no redirect/status change.
+See https://docs.aws.amazon.com/elasticloadbalancing/latest/application/rule-transforms.html.
+This removes the need for a Fargate/nginx proxy or a Lambda proxy for `/api`,
+and removes the need for a fallback Lambda for SPA deep links.
+
+- **SPA (`/`)** → IP target group of the S3 **interface endpoint** ENIs.
+  - `host-header-rewrite`: rewrite `Host` → the regional S3 endpoint /
+    bucket-addressed host so S3 resolves the object.
+  - `url-rewrite`: `^/[^.]*$` → `/index.html` gives SPA deep-link fallback
+    (`GET /leases/123` refresh). Requests that match no pattern (e.g. `*.js`,
+    `*.css`) are forwarded unchanged, so assets serve normally.
+- **API (`/api/*`)** → IP target group of the **private API Gateway**
+  `execute-api` interface endpoint ENIs.
+  - `host-header-rewrite`: rewrite `Host` → `{apiId}.execute-api.{region}...`
+    (API Gateway returns 403 if Host is not its own domain).
+  - `url-rewrite`: `^/api/(.*)` → `/{stage}/$1` strips the `/api` prefix and
+    injects the stage. Keeps same-origin — no frontend/SAML/CORS changes.
+  - Verified safe: every ISB API handler returns small `application/json`; there
+    are no file/CSV/binary/streaming responses.
+- **ENI IPs are not static** → an ENI-IP sync Lambda (scheduled + endpoint
+  change events) keeps both IP target groups current.
+- **Verify before deploy**: confirm ALB rule transforms are available in the
+  target GovCloud region (relatively recent feature); confirm the private API
+  Gateway `execute-api` endpoint policy allows the VPC/endpoint.
 
 ## Phases
 
@@ -86,10 +97,14 @@ Partition is **not** a flag — it is always the resolved `AWS::Partition` token
 
 ### Phase 2 — Private ALB + S3 front door (`hostingMode=alb-s3`)
 New construct `AlbS3UiApi` parallel to `CloudfrontUiApi`; commercial path
-untouched. VPC, S3 interface endpoint, domain-matched SPA bucket, private Route53
-+ ACM, internal ALB (HTTPS + HTTP→HTTPS redirect), ENI-IP sync Lambda,
-`index.html` fallback Lambda target, private API Gateway under `/api` base-path
-mapping, WAF re-homed to the private API stage.
+untouched. Components: VPC (2 AZ, isolated subnets); S3 interface endpoint +
+`execute-api` interface endpoint; internal ALB (HTTPS via ACM, HTTP→HTTPS
+redirect); two IP target groups (S3 ENIs, API GW ENIs) kept current by an
+ENI-IP sync Lambda; listener rules using `host-header-rewrite` + `url-rewrite`
+transforms for both the SPA and `/api` paths (see hosting design above); private
+API Gateway (`EndpointType.PRIVATE` — already REGIONAL-gated in Phase 0 becomes
+PRIVATE here); SPA `BucketDeployment` to the S3 bucket; WAF re-homed to the ALB.
+Frontend and SAML config unchanged (same-origin preserved).
 
 ### Phase 3 — Cost bridge, fully wired (`enableCommercialBridge=true`)
 `ICostService` + `CommercialBridgeCostService` + `CommercialBridgeClient`;

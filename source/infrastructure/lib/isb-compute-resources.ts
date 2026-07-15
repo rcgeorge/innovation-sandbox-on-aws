@@ -6,6 +6,7 @@ import { LogGroup } from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
 
 import { AccountCleaner } from "@amzn/innovation-sandbox-infrastructure/components/account-cleaner/account-cleaner";
+import { AlbS3UiApi } from "@amzn/innovation-sandbox-infrastructure/components/alb-s3/alb-s3-ui-api";
 import { RestApi } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
 import { BlueprintDeployment } from "@amzn/innovation-sandbox-infrastructure/components/blueprint-deployment/blueprint-deployment";
 import { CloudfrontUiApi } from "@amzn/innovation-sandbox-infrastructure/components/cloudfront/cloudfront-ui-api";
@@ -19,6 +20,7 @@ import { IsbLogGroups } from "@amzn/innovation-sandbox-infrastructure/components
 import { LogInsightsQueries } from "@amzn/innovation-sandbox-infrastructure/components/observability/log-insights-queries";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
+import { getHostingMode } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
 import { YesNoParameter } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 import { IntermediateRole } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import { GroupCostReportingLambda } from "./components/observability/group-cost-reporting-lambda";
@@ -101,10 +103,18 @@ export class IsbComputeResources {
       allowListedCidr: props.allowListedCidr,
     });
 
-    new CloudfrontUiApi(scope, "CloudFrontUiApi", {
-      restApi,
-      namespace: props.namespace,
-    });
+    if (getHostingMode(scope) === "alb-s3") {
+      new AlbS3UiApi(scope, "AlbS3UiApi", {
+        restApi,
+        namespace: props.namespace,
+        allowListedCidr: props.allowListedCidr,
+      });
+    } else {
+      new CloudfrontUiApi(scope, "CloudFrontUiApi", {
+        restApi,
+        namespace: props.namespace,
+      });
+    }
 
     new LogInsightsQueries(scope, "LogInsightsQueries", {
       namespace: props.namespace,
