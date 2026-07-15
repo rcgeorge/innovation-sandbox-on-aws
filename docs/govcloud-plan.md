@@ -117,10 +117,14 @@ transform API. The handler (`apply-rule-transforms-handler.ts`) calls elbv2
 Requires `@aws-sdk/client-elastic-load-balancing-v2` (added to the dependencies
 layer, pinned `^3.1087.0` — the version where the Transforms API landed).
 
-**Still open**: API Gateway is still REGIONAL in `alb-s3` mode (Phase 0). Making
-it `EndpointType.PRIVATE` with an `execute-api` resource policy is the
-security-correct final step; deferred because the endpoint-policy → VPC-endpoint
-reference needs a deployment-ordering strategy.
+**API Gateway PRIVATE endpoint** (done): in `alb-s3` mode the RestApi is a
+`EndpointType.PRIVATE` endpoint bound to the shared `execute-api` interface
+endpoint, with a resource policy allowing `execute-api:Invoke` only when
+`aws:SourceVpce` equals that endpoint. To resolve the endpoint-policy →
+VPC-endpoint ordering, networking is extracted into an `IsbPrivateNetwork`
+construct created *before* the RestApi and shared with `AlbS3UiApi`. Commercial
+mode passes no endpoint, so it keeps its default endpoint type and no policy
+(synth output unchanged — verified by snapshot tests).
 
 ### Phase 3 — Cost bridge, fully wired (`enableCommercialBridge=true`)
 `ICostService` + `CommercialBridgeCostService` + `CommercialBridgeClient`;

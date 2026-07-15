@@ -7,6 +7,7 @@ import { Construct } from "constructs";
 
 import { AccountCleaner } from "@amzn/innovation-sandbox-infrastructure/components/account-cleaner/account-cleaner";
 import { AlbS3UiApi } from "@amzn/innovation-sandbox-infrastructure/components/alb-s3/alb-s3-ui-api";
+import { IsbPrivateNetwork } from "@amzn/innovation-sandbox-infrastructure/components/alb-s3/isb-private-network";
 import { RestApi } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
 import { BlueprintDeployment } from "@amzn/innovation-sandbox-infrastructure/components/blueprint-deployment/blueprint-deployment";
 import { CloudfrontUiApi } from "@amzn/innovation-sandbox-infrastructure/components/cloudfront/cloudfront-ui-api";
@@ -94,6 +95,15 @@ export class IsbComputeResources {
       hubAccountId: Aws.ACCOUNT_ID,
     });
 
+    // In alb-s3 hosting mode, create the shared private network first so the
+    // RestApi can be a PRIVATE endpoint scoped to the execute-api VPC endpoint.
+    const albS3Mode = getHostingMode(scope) === "alb-s3";
+    const network = albS3Mode
+      ? new IsbPrivateNetwork(scope, "IsbPrivateNetwork", {
+          namespace: props.namespace,
+        })
+      : undefined;
+
     const restApi = new RestApi(scope, "IsbRestApi", {
       intermediateRole: intermediateRole,
       namespace: props.namespace,
@@ -101,13 +111,15 @@ export class IsbComputeResources {
       orgMgtAccountId: props.orgMgtAccountId,
       isbEventBus: isbInternalCore.eventBus,
       allowListedCidr: props.allowListedCidr,
+      executeApiEndpoint: network?.executeApiEndpoint,
     });
 
-    if (getHostingMode(scope) === "alb-s3") {
+    if (network) {
       new AlbS3UiApi(scope, "AlbS3UiApi", {
         restApi,
         namespace: props.namespace,
         allowListedCidr: props.allowListedCidr,
+        network,
       });
     } else {
       new CloudfrontUiApi(scope, "CloudFrontUiApi", {

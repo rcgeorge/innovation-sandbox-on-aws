@@ -9,8 +9,16 @@ import {
   LogGroupLogDestination,
   RequestAuthorizer,
 } from "aws-cdk-lib/aws-apigateway";
+import { IInterfaceVpcEndpoint } from "aws-cdk-lib/aws-ec2";
 import { EventBus } from "aws-cdk-lib/aws-events";
-import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import {
+  AnyPrincipal,
+  Effect,
+  PolicyDocument,
+  PolicyStatement,
+  Role,
+  ServicePrincipal,
+} from "aws-cdk-lib/aws-iam";
 import { LogGroup } from "aws-cdk-lib/aws-logs";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
@@ -43,6 +51,13 @@ export interface RestApiProps {
   orgMgtAccountId: string;
   isbEventBus: EventBus;
   allowListedCidr: string[];
+  /**
+   * When provided (alb-s3 hosting mode), the API is created as a PRIVATE
+   * endpoint reachable only through this execute-api interface VPC endpoint,
+   * with a resource policy scoped to it. When omitted (commercial), the API
+   * uses its default EDGE-optimized endpoint and no resource policy.
+   */
+  executeApiEndpoint?: IInterfaceVpcEndpoint;
 }
 
 export interface RestApiResourceProps extends RestApiProps {
@@ -170,17 +185,48 @@ export class RestApi extends ApiGatewayRestApi {
     });
 
     // EDGE-optimized endpoints (the API Gateway default) require CloudFront and
-    // are unavailable where CloudFront is not, e.g. GovCloud. When the ALB + S3
-    // hosting mode is selected, use a REGIONAL endpoint. Commercial keeps the
-    // default endpoint type so its synth output is unchanged.
-    const endpointConfiguration =
-      getHostingMode(scope) === "cloudfront"
-        ? undefined
-        : { types: [EndpointType.REGIONAL] };
+    // are unavailable where CloudFront is not, e.g. GovCloud.
+    //  - Commercial (cloudfront): keep the default endpoint type — no
+    //    endpointConfiguration, so synth output is unchanged.
+    //  - alb-s3 without a shared execute-api endpoint: REGIONAL.
+    //  - alb-s3 with a shared execute-api endpoint: PRIVATE, reachable only via
+    //    that endpoint, with a resource policy scoped to it.
+    let endpointConfiguration:
+      | { types: EndpointType[]; vpcEndpoints?: IInterfaceVpcEndpoint[] }
+      | undefined;
+    let resourcePolicy: PolicyDocument | undefined;
+
+    if (getHostingMode(scope) === "cloudfront") {
+      endpointConfiguration = undefined;
+    } else if (props.executeApiEndpoint) {
+      endpointConfiguration = {
+        types: [EndpointType.PRIVATE],
+        vpcEndpoints: [props.executeApiEndpoint],
+      };
+      // Allow invokes only through the shared execute-api VPC endpoint.
+      resourcePolicy = new PolicyDocument({
+        statements: [
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            principals: [new AnyPrincipal()],
+            actions: ["execute-api:Invoke"],
+            resources: ["execute-api:/*"],
+            conditions: {
+              StringEquals: {
+                "aws:SourceVpce": props.executeApiEndpoint.vpcEndpointId,
+              },
+            },
+          }),
+        ],
+      });
+    } else {
+      endpointConfiguration = { types: [EndpointType.REGIONAL] };
+    }
 
     super(scope, id, {
       description: "Innovation Sandbox on AWS Rest API",
       ...(endpointConfiguration ? { endpointConfiguration } : {}),
+      ...(resourcePolicy ? { policy: resourcePolicy } : {}),
       deployOptions: {
         accessLogDestination: new LogGroupLogDestination(
           IsbComputeResources.globalLogGroup,

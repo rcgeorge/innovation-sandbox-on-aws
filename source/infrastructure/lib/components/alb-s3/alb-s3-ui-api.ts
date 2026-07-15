@@ -45,6 +45,7 @@ import path from "path";
 
 import { ApplyRuleTransformsLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/apply-rule-transforms-lambda-environment.js";
 import { EndpointEniSyncLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/endpoint-eni-sync-lambda-environment.js";
+import { IsbPrivateNetwork } from "@amzn/innovation-sandbox-infrastructure/components/alb-s3/isb-private-network";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function-custom-resource";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
@@ -57,6 +58,12 @@ export interface AlbS3UiApiProps {
   restApi: ApiGatewayRestApi;
   namespace: string;
   allowListedCidr: string[];
+  /**
+   * Shared private networking (VPC + S3/execute-api interface endpoints),
+   * created before the RestApi so the API can be made PRIVATE and scoped to the
+   * execute-api endpoint.
+   */
+  network: IsbPrivateNetwork;
   /**
    * Optional: ARN of an ACM certificate for HTTPS. If not provided the ALB
    * will listen on HTTP only (suitable for dev/test; production should always
@@ -73,34 +80,11 @@ export class AlbS3UiApi extends Construct {
     super(scope, id);
     const kmsKey = IsbKmsKeys.get(scope, props.namespace);
 
-    // ─── VPC ────────────────────────────────────────────────────────────────
+    // ─── Shared networking (created before the RestApi) ─────────────────────
 
-    this.vpc = new ec2.Vpc(this, "Vpc", {
-      maxAzs: 2,
-      natGateways: 0, // no internet egress needed — all traffic stays in-VPC
-      subnetConfiguration: [
-        {
-          name: "Private",
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
-          cidrMask: 24,
-        },
-      ],
-    });
-
-    // ─── Interface Endpoints ────────────────────────────────────────────────
-
-    const s3Endpoint = this.vpc.addInterfaceEndpoint("S3Endpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.S3,
-      privateDnsEnabled: false, // we'll use the endpoint ENI IPs directly
-    });
-
-    const executeApiEndpoint = this.vpc.addInterfaceEndpoint(
-      "ExecuteApiEndpoint",
-      {
-        service: ec2.InterfaceVpcEndpointAwsService.APIGATEWAY,
-        privateDnsEnabled: true,
-      },
-    );
+    this.vpc = props.network.vpc;
+    const s3Endpoint = props.network.s3Endpoint;
+    const executeApiEndpoint = props.network.executeApiEndpoint;
 
     // ─── SPA S3 Bucket ──────────────────────────────────────────────────────
 
