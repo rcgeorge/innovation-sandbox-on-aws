@@ -29,6 +29,10 @@ scratch/
 .kiro/specs/
 .kiro/reviews/
 
+# Claude Code
+.claude/
+CLAUDE.md
+
 ### VisualStudioCode ###
 .vscode
 
