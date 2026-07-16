@@ -7,8 +7,13 @@
  * change on endpoint creation, scaling, or during AZ recovery — this handler
  * ensures target groups stay in sync.
  *
- * Invoked on a schedule (e.g. every 5 min) and optionally on endpoint-change
- * EventBridge events.
+ * Invoked once at deploy time (CDK Trigger) to populate the target groups
+ * immediately, then on a short schedule (every 2 min) to correct drift. There
+ * is no native EventBridge event for interface-endpoint ENI IP changes, so
+ * polling is the drift-correction mechanism; unreachable targets are also
+ * deregistered by ALB health checks in the interim. The handler reads all
+ * inputs from the environment and ignores its invocation event, so it behaves
+ * identically regardless of trigger.
  *
  * Environment variable format for ENDPOINT_TARGET_GROUP_MAPPINGS:
  *   vpce-abc123:arn:...:targetgroup/tg1/xxx,vpce-def456:arn:...:targetgroup/tg2/yyy

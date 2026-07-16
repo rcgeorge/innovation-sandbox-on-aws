@@ -7,6 +7,7 @@ import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandb
 import { AccountsCostReport } from "@amzn/innovation-sandbox-commons/isb-services/cost/accounts-cost-report.js";
 import {
   CommercialBridgeAccountMappingNotFoundError,
+  CommercialBridgeApiError,
   CommercialBridgeClient,
 } from "@amzn/innovation-sandbox-commons/isb-services/cost/commercial-bridge-client.js";
 import { createCommercialBridgeClient } from "@amzn/innovation-sandbox-commons/isb-services/cost/commercial-bridge-factory.js";
@@ -78,8 +79,16 @@ export class CommercialBridgeCostService implements ICostService {
       end: end.toISODate(),
     });
 
-    for (const accountId of Object.keys(accountsWithStartDates)) {
-      await this.accumulateAccountCost(report, accountId, start, end);
+    for (const [accountId, accountStart] of Object.entries(
+      accountsWithStartDates,
+    )) {
+      // Exclude spend that accrued before the lease started, matching
+      // CostExplorerService.getCostForRange (which filters periods to
+      // accountStart <= periodStart). Query from the later of the range start
+      // and the account's own start so a mid-range lease isn't over-counted.
+      const effectiveStart =
+        accountStart && accountStart > start ? accountStart : start;
+      await this.accumulateAccountCost(report, accountId, effectiveStart, end);
     }
     return report;
   }
@@ -142,6 +151,7 @@ export class CommercialBridgeCostService implements ICostService {
 
     let total = 0;
     let anySucceeded = false;
+    let lastError: unknown;
 
     for (const region of this.config.govCloudRegions) {
       try {
@@ -152,7 +162,12 @@ export class CommercialBridgeCostService implements ICostService {
           // Cost Explorer date boundaries are UTC; normalize to avoid an
           // off-by-one day when the Lambda runs in a non-UTC context.
           startDate: start.toUTC().toFormat("yyyy-MM-dd"),
-          endDate: end.toUTC().toFormat("yyyy-MM-dd"),
+          // Cost Explorer's TimePeriod.End is EXCLUSIVE. The commercial
+          // CostExplorerService bumps end to the start of the next period so the
+          // end day is included; match that here, otherwise the bridge would
+          // count spend only through the day *before* `end` and under-report
+          // current-day cost — silently under-enforcing lease budgets.
+          endDate: end.toUTC().plus({ days: 1 }).toFormat("yyyy-MM-dd"),
           granularity: "DAILY",
           region,
         });
@@ -167,6 +182,7 @@ export class CommercialBridgeCostService implements ICostService {
           );
           return undefined;
         }
+        lastError = error;
         logger.error("Failed to query commercial bridge cost", {
           govCloudAccountId,
           region,
@@ -175,6 +191,23 @@ export class CommercialBridgeCostService implements ICostService {
       }
     }
 
-    return anySucceeded ? total : undefined;
+    if (anySucceeded) {
+      return total;
+    }
+    // No region succeeded. If that was due to a real failure (bridge outage,
+    // expired credentials, throttling) we must propagate it — returning
+    // undefined here would drop the account from the cost report and make an
+    // outage indistinguishable from "$0 spend", silently defeating budget
+    // enforcement. Only a clean "no mapping" case (handled above via early
+    // return) legitimately yields no cost.
+    if (lastError !== undefined) {
+      throw new CommercialBridgeApiError(
+        `Commercial bridge cost query failed for account ${govCloudAccountId} ` +
+          `across all ${this.config.govCloudRegions.length} region(s): ` +
+          `${lastError instanceof Error ? lastError.message : String(lastError)}`,
+      );
+    }
+    // No regions configured / nothing queried — genuinely nothing to report.
+    return undefined;
   }
 }

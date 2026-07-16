@@ -5,11 +5,21 @@ import {
   ConcurrentModificationException,
   DescribeAccountCommand,
   ListAccountsForParentCommand,
+  ListTagsForResourceCommand,
   MoveAccountCommand,
   OrganizationsClient,
   paginateListAccountsForParent,
   TooManyRequestsException,
 } from "@aws-sdk/client-organizations";
+
+/**
+ * Organizations tag key under which cross-partition GovCloud provisioning
+ * records the commercial (aws partition) linked account id on the GovCloud
+ * account. The tag is a durable, lifecycle-independent carrier for the mapping
+ * so it survives until the account is registered (which creates the DynamoDB
+ * record). Commercial accounts never carry this tag.
+ */
+export const COMMERCIAL_LINKED_ACCOUNT_TAG_KEY = "isb:commercialLinkedAccountId";
 
 import { AccountPoolStackConfigStore } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/ssm-account-pool-stack-config-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
@@ -93,6 +103,27 @@ export class SandboxOuService {
         },
       },
     );
+  }
+
+  /**
+   * Read the commercial-linked-account mapping tag (if any) from an account.
+   * Returns undefined when the tag is absent or the lookup fails — callers treat
+   * that as "no explicit mapping" and fall back to bridge auto-discovery, so
+   * this never throws into the caller's control flow.
+   */
+  public async getCommercialLinkedAccountTag(
+    accountId: string,
+  ): Promise<string | undefined> {
+    try {
+      const response = await this.orgsClient.send(
+        new ListTagsForResourceCommand({ ResourceId: accountId }),
+      );
+      return response.Tags?.find(
+        (tag) => tag.Key === COMMERCIAL_LINKED_ACCOUNT_TAG_KEY,
+      )?.Value;
+    } catch {
+      return undefined;
+    }
   }
 
   public async moveAccount(

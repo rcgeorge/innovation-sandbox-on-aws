@@ -26,9 +26,15 @@ import {
   Protocol as ElbProtocol,
   TargetType,
 } from "aws-cdk-lib/aws-elasticloadbalancingv2";
-import { Effect, PolicyStatement, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import { AnyPrincipal, Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Rule, Schedule } from "aws-cdk-lib/aws-events";
 import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
+import {
+  Alarm,
+  ComparisonOperator,
+  TreatMissingData,
+} from "aws-cdk-lib/aws-cloudwatch";
+import { Trigger } from "aws-cdk-lib/triggers";
 // LogGroup/RetentionDays available if needed for future WAF logging
 
 import {
@@ -100,11 +106,17 @@ export class AlbS3UiApi extends Construct {
       enforceSSL: true,
     });
 
-    // Allow the S3 interface endpoint to GetObject
+    // Allow GetObject only for requests arriving through the S3 interface
+    // endpoint. Browser requests forwarded by the ALB are anonymous (no SigV4,
+    // no service principal), so the principal must be AnyPrincipal ({"AWS":"*"})
+    // — a ServicePrincipal("*") ({"Service":"*"}) would match only AWS service
+    // callers and deny every asset fetch. The aws:SourceVpce condition (plus the
+    // bucket's BlockPublicAccess) keeps this non-public: only traffic through
+    // this VPC endpoint is permitted.
     spaBucket.addToResourcePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        principals: [new ServicePrincipal("*")],
+        principals: [new AnyPrincipal()],
         actions: ["s3:GetObject"],
         resources: [spaBucket.arnForObjects("*")],
         conditions: {
@@ -151,7 +163,12 @@ export class AlbS3UiApi extends Construct {
       healthCheck: {
         path: "/",
         protocol: ElbProtocol.HTTPS,
-        healthyHttpCodes: "200,307,403,404", // S3 may return various on root
+        // Listener-rule host-header transforms do NOT apply to health checks, so
+        // the check reaches the S3 endpoint ENI with a bare-IP Host and S3
+        // answers with a 4xx (400/403/404 depending on request). Any HTTP status
+        // means the ENI is reachable and serving — which is the only thing this
+        // check can verify. A 5xx (endpoint genuinely broken) correctly fails.
+        healthyHttpCodes: "200-499",
         interval: Duration.seconds(30),
       },
     });
@@ -167,7 +184,10 @@ export class AlbS3UiApi extends Construct {
         healthCheck: {
           path: "/",
           protocol: ElbProtocol.HTTPS,
-          healthyHttpCodes: "200,403", // execute-api returns 403 on root
+          // As with the S3 group: transforms don't apply to health checks, so
+          // execute-api sees a bare-IP Host and returns 403/404. Any HTTP status
+          // confirms the endpoint ENI is alive; only a 5xx marks it unhealthy.
+          healthyHttpCodes: "200-499",
           interval: Duration.seconds(30),
         },
       },
@@ -222,11 +242,47 @@ export class AlbS3UiApi extends Construct {
       }),
     );
 
-    // Schedule the sync every 5 minutes
+    // Populate the target groups once at deploy time so the ALB has healthy
+    // targets immediately instead of blackholing (503) until the first
+    // scheduled run. The Trigger invokes the sync after the target groups and
+    // the interface endpoints (whose ENIs it reads) exist. A failure here fails
+    // the deploy, which is correct — the data path cannot serve without targets.
+    const deployTimeSync = new Trigger(this, "EniSyncOnDeploy", {
+      handler: eniSyncLambda.lambdaFunction,
+      executeAfter: [
+        s3TargetGroup,
+        apiTargetGroup,
+        s3Endpoint,
+        executeApiEndpoint,
+      ],
+      executeOnHandlerChange: true,
+    });
+    deployTimeSync.node.addDependency(eniSyncLambda.lambdaFunction);
+
+    // Correct drift on a schedule. There is no native EventBridge event for
+    // interface-endpoint ENI IP changes (AZ recovery / scaling), so a short
+    // polling interval is the practical mechanism; 2 minutes bounds the window
+    // during which a rotated ENI could point at a dead IP (health checks also
+    // deregister unreachable targets in the meantime).
     new Rule(this, "EniSyncSchedule", {
       description: "Periodically sync endpoint ENI IPs to ALB target groups",
-      schedule: Schedule.rate(Duration.minutes(5)),
+      schedule: Schedule.rate(Duration.minutes(2)),
       targets: [new LambdaFunction(eniSyncLambda.lambdaFunction)],
+    });
+
+    // Alarm if the sync fails repeatedly — it is the only thing keeping the ALB
+    // target groups aligned with the live endpoint ENIs, and silent failure
+    // means slow blackholing of the front door.
+    new Alarm(this, "EniSyncFailureAlarm", {
+      alarmDescription:
+        "Endpoint ENI-sync Lambda is failing; ALB target groups may drift from the live VPC endpoint ENIs, degrading the UI front door.",
+      metric: eniSyncLambda.lambdaFunction.metricErrors({
+        period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 3,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
     });
 
     // ─── Listener + Rules with Transforms ────────────────────────────────────
@@ -239,6 +295,17 @@ export class AlbS3UiApi extends Construct {
 
     const certificateArn =
       props.certificateArn ?? scope.node.tryGetContext("certificateArn");
+
+    // The ALB carries the SAML assertion and the rotated session JWT. Outside
+    // dev/test an HTTPS listener is mandatory — refuse to synth an HTTP-only
+    // front door that would move those credentials in cleartext.
+    if (!certificateArn && !isDevMode(scope)) {
+      throw new Error(
+        "AlbS3UiApi requires an ACM certificate outside dev mode. Provide " +
+          "`certificateArn` (prop or CDK context) so the ALB can serve HTTPS. " +
+          "HTTP-only is permitted only when the deployment is in dev mode.",
+      );
+    }
 
     const fixed404 = ListenerAction.fixedResponse(404, {
       contentType: "text/plain",
@@ -278,6 +345,13 @@ export class AlbS3UiApi extends Construct {
         defaultAction: fixed404,
       });
     }
+
+    // NOTE: ALB security-group ingress is left at the ALB default. The WAF web
+    // ACL (allow-listed CIDRs + rate limiting, keyed off the source IP — see
+    // below) is the request gate. SG-scoping to allowListedCidr is not applied
+    // here because those values arrive as CloudFormation parameter tokens
+    // (comma-split at deploy time), which ec2.Peer.ipv4() cannot validate; the
+    // load balancer is internal (internetFacing:false) regardless.
 
     // API rule (higher priority): /api/* → API Gateway target group
     const apiRule = new ApplicationListenerRule(this, "ApiListenerRule", {
@@ -339,7 +413,7 @@ export class AlbS3UiApi extends Construct {
     transformsCr.lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         actions: ["elasticloadbalancing:ModifyRule"],
-        resources: ["*"], // rule ARNs are not known until listener rules exist
+        resources: [spaRule.listenerRuleArn, apiRule.listenerRuleArn],
       }),
     );
 
@@ -350,6 +424,10 @@ export class AlbS3UiApi extends Construct {
       resourceArn: this.loadBalancer.loadBalancerArn,
       allowListedCidr: props.allowListedCidr,
       kmsKey,
+      // WAF sits directly on the ALB (no CloudFront injecting a trusted
+      // X-Forwarded-For), so key the allow-list and rate limit off the
+      // connection source IP.
+      useSourceIp: true,
     });
 
     // ─── Outputs ────────────────────────────────────────────────────────────

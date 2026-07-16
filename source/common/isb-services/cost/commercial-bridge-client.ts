@@ -14,6 +14,18 @@ import { existsSync, unlinkSync, writeFileSync } from "fs";
 // Roles Anywhere both operate against the commercial partition.
 const COMMERCIAL_REGION = "us-east-1";
 const CRED_HELPER_PATH = "/opt/bin/aws_signing_helper";
+// Per-request HTTP timeout for the cross-partition bridge call, and bounded
+// retries for transient (5xx / network) failures so a blip doesn't fail a whole
+// cost-monitoring run.
+const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 250;
+// Hard cap on the synchronous credential-helper exec so a hung helper can't
+// block the Lambda's event loop until the function times out.
+const CRED_HELPER_TIMEOUT_MS = 10_000;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 export interface RolesAnywhereConfig {
   clientCertSecretArn: string;
@@ -102,6 +114,7 @@ export class CommercialBridgeAccountMappingNotFoundError extends Error {
  * intentionally not supported.
  */
 export class CommercialBridgeClient {
+  private static tmpCounter = 0;
   private credentialsCache: RolesAnywhereCredentials | null = null;
   private readonly secretsManagerClient: SecretsManagerClient;
 
@@ -220,11 +233,48 @@ export class CommercialBridgeClient {
     const signedHeaders = (signed as { headers: Record<string, string> })
       .headers;
 
-    return fetch(url.toString(), {
-      method,
-      headers: signedHeaders,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const serializedBody = body ? JSON.stringify(body) : undefined;
+
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(
+        () => controller.abort(),
+        REQUEST_TIMEOUT_MS,
+      );
+      try {
+        const res = await fetch(url.toString(), {
+          method,
+          headers: signedHeaders,
+          body: serializedBody,
+          signal: controller.signal,
+        });
+        // Retry only on transient server-side failures; 4xx are surfaced to the
+        // caller (which maps 404 → mapping-not-found) without retrying.
+        if (res.status >= 500 && attempt < MAX_ATTEMPTS) {
+          lastError = new CommercialBridgeApiError(
+            `Commercial bridge returned ${res.status} ${res.statusText}`,
+          );
+          await sleep(RETRY_BASE_DELAY_MS * attempt);
+          continue;
+        }
+        return res;
+      } catch (error) {
+        // Network error or timeout (AbortError) — retry with backoff.
+        lastError = error;
+        if (attempt < MAX_ATTEMPTS) {
+          await sleep(RETRY_BASE_DELAY_MS * attempt);
+          continue;
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    throw new CommercialBridgeApiError(
+      `Commercial bridge request to ${path} failed after ${MAX_ATTEMPTS} ` +
+        `attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    );
   }
 
   private async getRolesAnywhereCredentials(): Promise<RolesAnywhereCredentials> {
@@ -245,8 +295,11 @@ export class CommercialBridgeClient {
     }
 
     const { cert, key } = await this.getClientCertificate();
-    const certPath = "/tmp/commercial-bridge-client.pem";
-    const keyPath = "/tmp/commercial-bridge-client.key";
+    // Unique per call so concurrent credential refreshes within one process
+    // cannot race on the shared files (or unlink each other's material).
+    const nonce = `${process.pid}-${++CommercialBridgeClient.tmpCounter}`;
+    const certPath = `/tmp/commercial-bridge-client-${nonce}.pem`;
+    const keyPath = `/tmp/commercial-bridge-client-${nonce}.key`;
 
     try {
       writeFileSync(certPath, Buffer.from(cert, "base64"), { mode: 0o600 });
@@ -267,7 +320,7 @@ export class CommercialBridgeClient {
           "--role-arn",
           this.rolesAnywhereConfig.roleArn,
         ],
-        { encoding: "utf-8" },
+        { encoding: "utf-8", timeout: CRED_HELPER_TIMEOUT_MS },
       );
 
       const credentials = JSON.parse(credJson) as RolesAnywhereCredentials;

@@ -112,17 +112,42 @@ export class GovCloudProvisioning extends Construct {
     );
     grantCommercialBridgeAccess(scope, orchestrator.lambdaFunction);
 
-    const invoke = (id2: string, action: string, extra: object = {}) =>
-      new LambdaInvoke(this, id2, {
+    const provisioningFailed = new Fail(this, "ProvisioningFailed", {
+      error: "GovCloudProvisioningFailed",
+      causePath: "$.error.Cause",
+    });
+
+    const invoke = (id2: string, action: string, extra: object = {}) => {
+      const task = new LambdaInvoke(this, id2, {
         lambdaFunction: orchestrator.lambdaFunction,
         payload: TaskInput.fromObject({ action, ...extra }),
         resultSelector: { "payload.$": "$.Payload" },
         resultPath: "$.lastResult",
       });
-
-    const provisioningFailed = new Fail(this, "ProvisioningFailed", {
-      error: "GovCloudProvisioningFailed",
-    });
+      // Retry only TRANSIENT Lambda-service failures (throttling, service
+      // exceptions, network) with backoff. Business errors thrown by the
+      // orchestrator surface as "States.TaskFailed" and are NOT retried — that
+      // would re-run steps that are not all idempotent — they route to the
+      // failure state via the catch below instead.
+      task.addRetry({
+        errors: [
+          "Lambda.ServiceException",
+          "Lambda.AWSLambdaException",
+          "Lambda.SdkClientException",
+          "Lambda.TooManyRequestsException",
+        ],
+        interval: Duration.seconds(2),
+        maxAttempts: 4,
+        backoffRate: 2,
+      });
+      // Any uncaught failure ends the run cleanly at the Fail state (with the
+      // Lambda cause) instead of stranding the execution until the state-machine
+      // timeout.
+      task.addCatch(provisioningFailed, {
+        resultPath: "$.error",
+      });
+      return task;
+    };
 
     const create = invoke("InitiateAccountCreation", "create", {
       "accountName.$": "$.detail.accountName",
@@ -163,6 +188,10 @@ export class GovCloudProvisioning extends Construct {
 
     const succeed = new Succeed(this, "ProvisioningComplete");
 
+    // Poll outcomes: SUCCEEDED proceeds; FAILED and UNKNOWN (the orchestrator
+    // emits UNKNOWN when Organizations returns no creation state — an
+    // unexpected condition) end the run cleanly; only the expected IN_PROGRESS
+    // keeps polling, bounded by the state-machine timeout.
     const statusChoice = new Choice(this, "AccountCreated?")
       .when(
         Condition.stringEquals("$.lastResult.payload.status", "SUCCEEDED"),
@@ -176,7 +205,15 @@ export class GovCloudProvisioning extends Construct {
         Condition.stringEquals("$.lastResult.payload.status", "FAILED"),
         provisioningFailed,
       )
-      .otherwise(waitForCreation);
+      .when(
+        Condition.stringEquals("$.lastResult.payload.status", "UNKNOWN"),
+        provisioningFailed,
+      )
+      .when(
+        Condition.stringEquals("$.lastResult.payload.status", "IN_PROGRESS"),
+        waitForCreation,
+      )
+      .otherwise(provisioningFailed);
 
     waitForCreation.next(checkStatus);
     checkStatus.next(statusChoice);

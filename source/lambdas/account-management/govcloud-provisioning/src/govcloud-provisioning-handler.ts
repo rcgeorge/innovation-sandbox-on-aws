@@ -19,13 +19,15 @@
 import { Logger } from "@aws-lambda-powertools/logger";
 import {
   InviteAccountToOrganizationCommand,
-  ListRootsCommand,
+  ListParentsCommand,
   MoveAccountCommand,
   OrganizationsClient,
+  TagResourceCommand,
 } from "@aws-sdk/client-organizations";
 
 import { createCommercialBridgeClient } from "@amzn/innovation-sandbox-commons/isb-services/cost/commercial-bridge-factory.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
+import { COMMERCIAL_LINKED_ACCOUNT_TAG_KEY } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
 import { GovCloudProvisioningLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/govcloud-provisioning-lambda-environment.js";
 import { fromTemporaryIsbOrgManagementCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
 
@@ -63,6 +65,28 @@ function requireField<K extends keyof ProvisioningEvent>(
   return value as NonNullable<ProvisioningEvent[K]>;
 }
 
+// AWS Organizations account-name and email constraints. The API-layer Zod
+// schema validates these at request time, but the orchestrator can also be
+// driven directly by the Step Function off an EventBridge event, so re-validate
+// here as defense-in-depth before spending money on a real account.
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateAccountName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length === 0 || trimmed.length > 50) {
+    throw new Error("accountName must be between 1 and 50 characters");
+  }
+  return trimmed;
+}
+
+function validateEmail(email: string): string {
+  const trimmed = email.trim();
+  if (!EMAIL_REGEX.test(trimmed) || trimmed.length > 64) {
+    throw new Error("email must be a valid address no longer than 64 characters");
+  }
+  return trimmed;
+}
+
 export async function handler(
   event: ProvisioningEvent,
 ): Promise<Record<string, unknown>> {
@@ -72,8 +96,8 @@ export async function handler(
   switch (event.action) {
     case "create": {
       const res = await bridge.createGovCloudAccount({
-        accountName: requireField(event, "accountName"),
-        email: requireField(event, "email"),
+        accountName: validateAccountName(requireField(event, "accountName")),
+        email: validateEmail(requireField(event, "email")),
       });
       return { requestId: res.requestId, status: res.status };
     }
@@ -128,27 +152,51 @@ export async function handler(
         credentials,
       });
 
-      // A freshly-joined account lands directly under the org root; move it
-      // into the ISB Entry OU so it enters the normal onboarding lifecycle.
-      const roots = await orgs.send(new ListRootsCommand({}));
-      const rootId = roots.Roots?.[0]?.Id;
-      if (!rootId) {
-        throw new Error("Could not determine the GovCloud organization root id");
-      }
       const { entryOuId } = await IsbServices.accountPoolStackConfigStore(
         env(),
       ).get();
+
+      // Idempotent move: a freshly-joined account lands under the org root, but
+      // on a Step Function retry it may already be in Entry. Read the current
+      // parent and only move when needed, using the ACTUAL current parent as the
+      // source — assuming "root" would fail if the account has already moved.
+      const parents = await orgs.send(
+        new ListParentsCommand({ ChildId: govCloudAccountId }),
+      );
+      const currentParentId = parents.Parents?.[0]?.Id;
+      if (!currentParentId) {
+        throw new Error(
+          `Could not determine current parent for account ${govCloudAccountId}`,
+        );
+      }
+      if (currentParentId !== entryOuId) {
+        await orgs.send(
+          new MoveAccountCommand({
+            AccountId: govCloudAccountId,
+            SourceParentId: currentParentId,
+            DestinationParentId: entryOuId,
+          }),
+        );
+      }
+
+      // Persist the commercial linked account mapping durably as an
+      // Organizations tag so it survives until ISB registration creates the
+      // DynamoDB record (which reads this tag). Also update the record directly
+      // if it already exists (e.g. the account was registered before this step).
+      // If neither succeeds the cost bridge still resolves the mapping via
+      // Organizations auto-discovery, so tagging failure is non-fatal.
       await orgs.send(
-        new MoveAccountCommand({
-          AccountId: govCloudAccountId,
-          SourceParentId: rootId,
-          DestinationParentId: entryOuId,
+        new TagResourceCommand({
+          ResourceId: govCloudAccountId,
+          Tags: [
+            {
+              Key: COMMERCIAL_LINKED_ACCOUNT_TAG_KEY,
+              Value: commercialAccountId,
+            },
+          ],
         }),
       );
 
-      // Record the commercial linked account so the cost bridge can map this
-      // GovCloud account to the commercial bill. The account record is created
-      // later during ISB registration, so only update if it already exists.
       const accountStore = IsbServices.sandboxAccountStore(env());
       const existing = await accountStore.get(govCloudAccountId);
       if (existing.result) {

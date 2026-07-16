@@ -16,7 +16,11 @@ import {
   AcceptHandshakeCommand,
   OrganizationsClient,
 } from "@aws-sdk/client-organizations";
-import { AssumeRoleCommand, STSClient } from "@aws-sdk/client-sts";
+import {
+  AssumeRoleCommand,
+  Credentials as StsCredentials,
+  STSClient,
+} from "@aws-sdk/client-sts";
 import type {
   APIGatewayProxyEvent,
   APIGatewayProxyResult,
@@ -27,6 +31,29 @@ const JSON_HEADERS = { "Content-Type": "application/json" };
 
 function response(statusCode: number, body: unknown): APIGatewayProxyResult {
   return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
+}
+
+/**
+ * Extract SigV4 credentials from an AssumeRole result, failing with a clear
+ * message rather than a bare non-null-assertion TypeError if STS returns an
+ * incomplete response.
+ */
+function toCredentials(
+  creds: StsCredentials | undefined,
+  step: string,
+): { accessKeyId: string; secretAccessKey: string; sessionToken: string } {
+  if (
+    !creds?.AccessKeyId ||
+    !creds.SecretAccessKey ||
+    !creds.SessionToken
+  ) {
+    throw new Error(`AssumeRole for ${step} returned no credentials`);
+  }
+  return {
+    accessKeyId: creds.AccessKeyId,
+    secretAccessKey: creds.SecretAccessKey,
+    sessionToken: creds.SessionToken,
+  };
 }
 
 interface AcceptInvitationRequest {
@@ -69,9 +96,8 @@ export const handler = async (
       });
     }
 
+    // 1. management → commercial linked account (commercial STS endpoint).
     const sts = new STSClient({ region: COMMERCIAL_REGION });
-
-    // 1. management → commercial linked account.
     const commercialCreds = await sts.send(
       new AssumeRoleCommand({
         RoleArn: `arn:aws:iam::${commercialLinkedAccountId}:role/OrganizationAccountAccessRole`,
@@ -79,14 +105,22 @@ export const handler = async (
       }),
     );
 
-    // 2. commercial linked → GovCloud account (cross-partition).
+    // 2. commercial linked → GovCloud account.
+    //
+    // STS is partition-scoped: assuming a role whose ARN is in the
+    // `aws-us-gov` partition MUST target a GovCloud STS endpoint. Using the
+    // commercial `us-east-1` endpoint here fails — it cannot vend credentials
+    // for an aws-us-gov role. The GovCloud region drives SDK endpoint
+    // resolution to the correct partition. (This relies on the GovCloud
+    // account's OrganizationAccountAccessRole trusting the paired commercial
+    // linked account; that trust must be validated end-to-end in a real
+    // GovCloud + commercial deployment.)
     const linkedSts = new STSClient({
-      region: COMMERCIAL_REGION,
-      credentials: {
-        accessKeyId: commercialCreds.Credentials!.AccessKeyId!,
-        secretAccessKey: commercialCreds.Credentials!.SecretAccessKey!,
-        sessionToken: commercialCreds.Credentials!.SessionToken!,
-      },
+      region: govCloudRegion,
+      credentials: toCredentials(
+        commercialCreds.Credentials,
+        "commercial linked account",
+      ),
     });
     const govCloudCreds = await linkedSts.send(
       new AssumeRoleCommand({
@@ -98,11 +132,10 @@ export const handler = async (
     // 3. accept the handshake with GovCloud credentials.
     const govCloudOrgs = new OrganizationsClient({
       region: govCloudRegion,
-      credentials: {
-        accessKeyId: govCloudCreds.Credentials!.AccessKeyId!,
-        secretAccessKey: govCloudCreds.Credentials!.SecretAccessKey!,
-        sessionToken: govCloudCreds.Credentials!.SessionToken!,
-      },
+      credentials: toCredentials(
+        govCloudCreds.Credentials,
+        "GovCloud account",
+      ),
     });
     const accepted = await govCloudOrgs.send(
       new AcceptHandshakeCommand({ HandshakeId: handshakeId }),

@@ -106,12 +106,23 @@ export class InnovationSandbox {
     if (account === undefined) {
       throw new CouldNotFindAccountError("Could not find account to register.");
     }
+    // Preserve the GovCloud commercial-linked-account mapping across
+    // registration. The mapping is set by cross-partition provisioning as an
+    // Organizations tag (durable, lifecycle-independent) and/or on any existing
+    // record; carry it onto the new record so the commercial bridge cost
+    // service can resolve it without falling back to Organizations
+    // auto-discovery on every query. Absent for commercial deployments.
+    const existingRecord = await orgsService.sandboxAccountStore.get(accountId);
+    const commercialLinkedAccountId =
+      (await orgsService.getCommercialLinkedAccountTag(accountId)) ??
+      existingRecord?.result?.commercialLinkedAccountId;
     let newSandboxAccount: SandboxAccount = {
       awsAccountId: accountId,
       email: account.email,
       name: account.name,
       driftAtLastScan: false,
       status: "CleanUp",
+      ...(commercialLinkedAccountId ? { commercialLinkedAccountId } : {}),
     };
     addCorrelationContext(
       logger,

@@ -19,3 +19,22 @@ CDK layer construct packages `bin/` as the layer content. `bin/` is gitignored â
 the binary is fetched at build time, not committed.
 
 Override the version with `ROLES_ANYWHERE_HELPER_VERSION` if needed.
+
+## Integrity verification (required)
+
+The binary is executed inside a Lambda that holds the client certificate/key and
+the function's IAM credentials, so the build **verifies its SHA-256 before
+packaging** and refuses to proceed without a pinned digest. Supply the expected
+digest either way:
+
+- set `ROLES_ANYWHERE_HELPER_SHA256=<hex>`, or
+- commit `checksums/<VERSION>-<ARCH>.sha256` (e.g. `checksums/1.1.1-linux-arm64.sha256`)
+  containing just the hex digest.
+
+Obtain the digest from a trusted source and pin it. On a mismatch the build
+deletes the download and aborts. Example creating the sidecar from a trusted
+machine:
+
+```shell
+sha256sum bin/aws_signing_helper | awk '{print $1}' > checksums/1.1.1-linux-arm64.sha256
+```

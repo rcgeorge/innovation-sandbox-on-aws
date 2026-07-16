@@ -141,4 +141,38 @@ describe("CommercialBridgeCostService", () => {
 
     expect(result["111111111111"]).toEqual({ "2026-01-01": 4 });
   });
+
+  it("passes an exclusive end date (end + 1 day) to match Cost Explorer semantics", async () => {
+    queryCostMock.mockResolvedValue({ totalCost: 1 } as any);
+
+    const service = makeService(makeStore("222222222222"), ["us-gov-east-1"]);
+    await service.getCostForLeases({ "111111111111": start }, end);
+
+    const params = queryCostMock.mock.calls[0]![0];
+    expect(params.startDate).toBe("2026-01-01");
+    // end is 2026-01-31; Cost Explorer End is exclusive, so we send +1 day so
+    // the end day itself is included in the cost.
+    expect(params.endDate).toBe("2026-02-01");
+  });
+
+  it("throws when every region fails with a real error (does not report $0)", async () => {
+    queryCostMock.mockRejectedValue(new Error("bridge down"));
+
+    const service = makeService(makeStore("222222222222"));
+    await expect(
+      service.getCostForLeases({ "111111111111": start }, end),
+    ).rejects.toThrow(/failed for account 111111111111/i);
+  });
+
+  it("getCostForRange queries from the later of range start and lease start", async () => {
+    queryCostMock.mockResolvedValue({ totalCost: 2 } as any);
+
+    const leaseStart = DateTime.fromISO("2026-01-15T00:00:00Z");
+    const service = makeService(makeStore("222222222222"), ["us-gov-east-1"]);
+    await service.getCostForRange(start, end, { "111111111111": leaseStart });
+
+    // Lease started mid-range, so cost before it must be excluded — the query
+    // start is the lease start, not the range start.
+    expect(queryCostMock.mock.calls[0]![0].startDate).toBe("2026-01-15");
+  });
 });

@@ -34,6 +34,20 @@ export interface WafProps {
   resourceArn: string;
   allowListedCidr: string[];
   kmsKey: IKey;
+  /**
+   * How the allow-list and rate-limit rules identify the client IP.
+   *
+   * - `false` (default): read the client IP from the `X-Forwarded-For` header.
+   *   Correct when the WAF is associated with API Gateway *behind CloudFront*,
+   *   which injects a trustworthy `X-Forwarded-For`. This is the commercial
+   *   default and keeps synth output byte-identical.
+   * - `true`: use the connection source IP directly. Required when the WAF is
+   *   associated with an internet-/VPC-facing ALB, because WAF evaluates the
+   *   request *before* the ALB appends its own `X-Forwarded-For`. Reading XFF
+   *   here would (a) block legitimate browsers that send no XFF and (b) let a
+   *   caller spoof an allow-listed IP via a forged `X-Forwarded-For` header.
+   */
+  useSourceIp?: boolean;
 }
 
 export class Waf extends Construct {
@@ -49,6 +63,37 @@ export class Waf extends Construct {
       ipAddressVersion: "IPV4",
       scope: "REGIONAL",
     });
+
+    // When associated with an ALB, key off the connection source IP; when
+    // behind CloudFront (commercial default), trust the injected XFF header.
+    const useSourceIp = props.useSourceIp ?? false;
+
+    const allowListIpSetStatement = useSourceIp
+      ? { arn: ipSet.attrArn }
+      : {
+          arn: ipSet.attrArn,
+          ipSetForwardedIpConfig: {
+            headerName: "X-Forwarded-For",
+            fallbackBehavior: "NO_MATCH",
+            position: "FIRST",
+          },
+        };
+
+    const rateBasedStatement = useSourceIp
+      ? {
+          evaluationWindowSec: 60,
+          limit: 200,
+          aggregateKeyType: "IP",
+        }
+      : {
+          evaluationWindowSec: 60,
+          limit: 200,
+          aggregateKeyType: "FORWARDED_IP",
+          forwardedIpConfig: {
+            headerName: "X-Forwarded-For",
+            fallbackBehavior: "MATCH",
+          },
+        };
 
     this.webAcl = new CfnWebACL(this, "WebAcl", {
       defaultAction: { allow: {} },
@@ -76,14 +121,7 @@ export class Waf extends Construct {
           statement: {
             notStatement: {
               statement: {
-                ipSetReferenceStatement: {
-                  arn: ipSet.attrArn,
-                  ipSetForwardedIpConfig: {
-                    headerName: "X-Forwarded-For",
-                    fallbackBehavior: "NO_MATCH",
-                    position: "FIRST",
-                  },
-                },
+                ipSetReferenceStatement: allowListIpSetStatement,
               },
             },
           },
@@ -105,15 +143,7 @@ export class Waf extends Construct {
             },
           },
           statement: {
-            rateBasedStatement: {
-              evaluationWindowSec: 60,
-              limit: 200,
-              aggregateKeyType: "FORWARDED_IP",
-              forwardedIpConfig: {
-                headerName: "X-Forwarded-For",
-                fallbackBehavior: "MATCH",
-              },
-            },
+            rateBasedStatement,
           },
           visibilityConfig: {
             cloudWatchMetricsEnabled: true,

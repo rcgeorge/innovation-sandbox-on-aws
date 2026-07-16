@@ -33,18 +33,56 @@ function response(statusCode: number, body: unknown): APIGatewayProxyResult {
 }
 
 function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 64;
 }
 
 /**
- * Alias the email so repeated provisioning from one mailbox stays unique, e.g.
- * user@example.com → user+govcloud-<timestamp>@example.com. The timestamp comes
- * from the request context (deterministic per invocation) rather than Date.now
- * at module scope.
+ * Alias the email DETERMINISTICALLY from the account name so that a retry or a
+ * duplicate event for the same logical request maps to the same mailbox, e.g.
+ * user@example.com + "Team A" → user+govcloud-team-a@example.com. A
+ * timestamp-based alias would mint a brand-new (irreversible, billable) account
+ * pair on every retry.
  */
-function aliasEmail(baseEmail: string, requestTimeEpochMs: number): string {
+function aliasEmail(baseEmail: string, accountName: string): string {
   const [localPart, domain] = baseEmail.split("@");
-  return `${localPart}+govcloud-${requestTimeEpochMs}@${domain}`;
+  const slug = accountName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return `${localPart}+govcloud-${slug}@${domain}`;
+}
+
+/**
+ * Find an existing create-account request (in-progress or already succeeded)
+ * for this account name so we don't launch a duplicate. Account creation is
+ * neither cheap nor reversible, and the request can arrive more than once
+ * (EventBridge at-least-once delivery, Step Function retries, double-submits).
+ */
+async function findExistingRequest(
+  accountName: string,
+): Promise<string | undefined> {
+  let nextToken: string | undefined;
+  do {
+    const res = await organizations.send(
+      new ListCreateAccountStatusCommand({
+        States: [
+          CreateAccountState.IN_PROGRESS,
+          CreateAccountState.SUCCEEDED,
+        ],
+        NextToken: nextToken,
+      }),
+    );
+    const match = (res.CreateAccountStatuses ?? []).find(
+      (s) => s.AccountName === accountName,
+    );
+    if (match?.Id) {
+      return match.Id;
+    }
+    nextToken = res.NextToken;
+  } while (nextToken);
+  return undefined;
 }
 
 async function handleCreate(
@@ -60,27 +98,41 @@ async function handleCreate(
   }
 
   const email = body.email as string;
-  const accountName = body.accountName as string;
+  const accountName = (body.accountName as string)?.trim();
   if (!email || !isValidEmail(email)) {
     return response(400, { error: "Valid email is required" });
   }
-  if (!accountName || accountName.trim().length === 0) {
-    return response(400, { error: "accountName is required" });
+  if (!accountName || accountName.length === 0 || accountName.length > 50) {
+    return response(400, {
+      error: "accountName is required and must be at most 50 characters",
+    });
+  }
+  const roleName = (body.roleName as string) || "OrganizationAccountAccessRole";
+  if (!/^[\w+=,.@-]{1,64}$/.test(roleName)) {
+    return response(400, { error: "roleName contains invalid characters" });
+  }
+  const iamUserAccessToBilling =
+    (body.iamUserAccessToBilling as string) === "ALLOW" ? "ALLOW" : "DENY";
+
+  // Idempotency guard: return an in-flight/completed request for the same
+  // account name instead of creating a second account pair.
+  const existingRequestId = await findExistingRequest(accountName);
+  if (existingRequestId) {
+    return response(202, {
+      requestId: existingRequestId,
+      status: "IN_PROGRESS",
+      message: "Existing account-creation request reused (idempotent).",
+    });
   }
 
-  const uniqueEmail = aliasEmail(
-    email,
-    event.requestContext.requestTimeEpoch,
-  );
+  const uniqueEmail = aliasEmail(email, accountName);
 
   const result = await organizations.send(
     new CreateGovCloudAccountCommand({
       Email: uniqueEmail,
       AccountName: accountName,
-      RoleName:
-        (body.roleName as string) || "OrganizationAccountAccessRole",
-      IamUserAccessToBilling:
-        (body.iamUserAccessToBilling as "ALLOW" | "DENY") || "DENY",
+      RoleName: roleName,
+      IamUserAccessToBilling: iamUserAccessToBilling,
     }),
   );
 

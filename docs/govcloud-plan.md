@@ -207,6 +207,43 @@ exercise end-to-end.
 Stacked PRs: (0) partition + drop-workarounds → (2) hosting behind flag → (3)
 cost bridge → (4) provisioning. Each independently backward-compatible.
 
+## Post-review hardening
+
+A review pass fixed the following (all covered by unit tests and a GovCloud-mode
+synth smoke test — `source/infrastructure/test/govcloud-synth.test.ts`):
+
+- **SCP partition wiring** — the `${partition}` substitution is now actually
+  passed (`isGovCloud ? "aws-us-gov" : "aws"`, a literal — not the `AWS::Partition`
+  token, which cannot be embedded in the policy JSON string). Previously every
+  SCP rendered `arn:aws:` even in GovCloud.
+- **ALB front door** — S3 bucket policy uses `AnyPrincipal` (browser GETs through
+  the endpoint are anonymous; `ServicePrincipal("*")` denied them); the ALB WAF
+  keys off the connection **source IP** (it is not behind CloudFront, so an XFF
+  allow-list both blocked real users and was spoofable); target-group health
+  checks accept any HTTP status (`200-499`) since host-header transforms don't
+  apply to health checks; target groups are populated at deploy time (CDK
+  Trigger) instead of blackholing until the first 2-min poll; a CloudWatch alarm
+  fires on ENI-sync failure; HTTPS is mandatory outside dev mode.
+- **Cost bridge** — `getCostForLeases` sends an exclusive end date (+1 day) to
+  match Cost Explorer (was under-counting current-day spend); a total query
+  failure now throws instead of silently reporting `$0`; `getCostForRange`
+  excludes pre-lease-start spend; the cross-partition call has a timeout + bounded
+  retry; `build.sh` verifies the credential-helper binary's SHA-256.
+- **Cross-partition provisioning** — the GovCloud AssumeRole targets a GovCloud
+  STS endpoint (STS is partition-scoped); account creation is idempotent
+  (deterministic email + existing-request dedup); the Step Function has
+  retry/catch on every task and bounded poll-state handling; the
+  `commercialLinkedAccountId` mapping is persisted as an Organizations tag and
+  re-applied at registration (previously dropped); the orchestrator re-validates
+  name/email; the org-management role is granted the required Organizations
+  actions (Invite/TagResource/ListParents), gated on the provisioning flag.
+
+Note on backward-compat: commercial synth output is unchanged for all
+flag-gated paths (the SCP/WAF/ALB/provisioning changes above produce no diff when
+flags are off). The Phase-0 partition changes (SSO ARN regex, `AWS_PARTITION`
+buildspec var, partition-tokenized step-function ARN) are unconditional but
+semantically equivalent in the commercial partition.
+
 ## Security notes
 - Rotate the API key exposed in the fork's `GOVCLOUD-IMPLEMENTATION.md` before
   anything ships. Do not reuse the API-key auth path — Roles Anywhere only.

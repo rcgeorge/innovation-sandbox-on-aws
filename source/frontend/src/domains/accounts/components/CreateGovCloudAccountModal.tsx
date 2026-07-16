@@ -43,19 +43,23 @@ export const CreateGovCloudAccountModal = ({
   };
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  const canSubmit = accountName.trim().length > 0 && emailValid && !isPending;
+  const trimmedName = accountName.trim();
+  const nameValid = trimmedName.length > 0 && trimmedName.length <= 50;
+  const canSubmit = nameValid && emailValid && !isPending;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
     try {
-      await createGovCloudAccount({ accountName: accountName.trim(), email });
+      await createGovCloudAccount({ accountName: trimmedName, email });
       showSuccessToast(
         "GovCloud account provisioning started. The account will appear under unregistered accounts once created and joined.",
       );
       handleClose();
-    } catch {
+    } catch (error) {
       showErrorToast(
-        "Failed to start GovCloud account provisioning.",
+        error instanceof Error
+          ? error.message
+          : "Failed to start GovCloud account provisioning.",
         "Provisioning error",
       );
     }
@@ -94,7 +98,12 @@ export const CreateGovCloudAccountModal = ({
           </Alert>
           <FormField
             label="Account name"
-            description="A name for the new GovCloud account."
+            description="A name for the new GovCloud account (max 50 characters)."
+            errorText={
+              trimmedName.length > 50
+                ? "Account name must be at most 50 characters"
+                : undefined
+            }
           >
             <Input
               value={accountName}

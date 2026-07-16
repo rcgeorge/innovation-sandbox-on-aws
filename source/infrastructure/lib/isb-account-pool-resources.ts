@@ -42,6 +42,10 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import {
+  isGovCloud,
+  isGovCloudAccountProvisioningEnabled,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
+import {
   getIntermediateRoleName,
   getOrgMgtRoleName,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
@@ -115,9 +119,18 @@ export class IsbAccountPoolResources {
     const organizationId = Fn.select(1, Fn.split("/", sandboxOu.attrArn));
 
     // Service Control Policies (SCPs)
+    //
+    // The SCP JSON documents are rendered by a raw string substitution (see
+    // isb-get-scp.ts), so the partition must be a literal string here — the
+    // CloudFormation `AWS::Partition` pseudo-parameter token would be embedded
+    // unresolved into the policy body and produce invalid ARNs. `isGovCloud`
+    // is the correct synth-time signal for exactly this kind of
+    // schema-level difference that a runtime token cannot express.
+    const scpPartition = isGovCloud(scope) ? "aws-us-gov" : "aws";
 
     const allowedServicesScp = getInnovationSandboxAwsNukeSupportedServicesScp({
       namespace: props.namespace,
+      partition: scpPartition,
     });
 
     new CfnPolicy(scope, "InnovationSandboxAwsNukeSupportedServicesScp", {
@@ -131,6 +144,7 @@ export class IsbAccountPoolResources {
 
     const restrictionScp = getInnovationSandboxRestrictionsScp({
       namespace: props.namespace,
+      partition: scpPartition,
     });
 
     new CfnPolicy(scope, "InnovationSandboxRestrictionsScp", {
@@ -144,6 +158,7 @@ export class IsbAccountPoolResources {
 
     const protectionScp = getInnovationSandboxProtectScp({
       namespace: props.namespace,
+      partition: scpPartition,
     });
 
     new CfnPolicy(scope, "InnovationSandboxProtectISBScp", {
@@ -158,6 +173,7 @@ export class IsbAccountPoolResources {
     const limitRegionsScp = getInnovationSandboxLimitRegionsScp({
       namespace: props.namespace,
       isbManagedRegions: props.isbManagedRegions,
+      partition: scpPartition,
     });
 
     new CfnPolicy(scope, "InnovationSandboxLimitRegionsScp", {
@@ -171,6 +187,7 @@ export class IsbAccountPoolResources {
 
     const writeProtectionScp = getInnovationSandboxWriteProtectionScp({
       namespace: props.namespace,
+      partition: scpPartition,
     });
 
     new CfnPolicy(scope, "InnovationSandboxWriteProtectionScp", {
@@ -208,64 +225,84 @@ export class IsbAccountPoolResources {
       ),
     });
 
+    const accountArn = Stack.of(scope).formatArn({
+      service: "organizations",
+      region: "",
+      resource: "account",
+      arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+      resourceName: `${organizationId}/*`,
+    });
+    const rootArn = Stack.of(scope).formatArn({
+      service: "organizations",
+      region: "",
+      resource: "root",
+      arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+      resourceName: `${organizationId}/*`,
+    });
+
+    const organizationsStatements = [
+      new PolicyStatement({
+        actions: [
+          "organizations:ListOrganizationalUnitsForParent",
+          "organizations:ListAccountsForParent",
+        ],
+        resources: [
+          sandboxOu.attrArn,
+          availableOu.attrArn,
+          activeOu.attrArn,
+          cleanUpOu.attrArn,
+          quarantineOu.attrArn,
+          entryOu.attrArn,
+          exitOu.attrArn,
+          frozenOu.attrArn,
+        ],
+      }),
+      new PolicyStatement({
+        actions: ["organizations:MoveAccount"],
+        resources: [
+          availableOu.attrArn,
+          activeOu.attrArn,
+          cleanUpOu.attrArn,
+          quarantineOu.attrArn,
+          entryOu.attrArn,
+          exitOu.attrArn,
+          frozenOu.attrArn,
+          accountArn,
+          rootArn,
+        ],
+      }),
+      new PolicyStatement({
+        actions: ["organizations:DescribeAccount"],
+        resources: [accountArn],
+      }),
+    ];
+
+    // Additional Organizations permissions needed only by the optional
+    // cross-partition GovCloud account-provisioning flow (orchestrator Lambda:
+    // ListParents/MoveAccount to Entry, InviteAccountToOrganization,
+    // TagResource to record the commercial-linked-account mapping). Gated on the
+    // provisioning flag so commercial synth output is unchanged when it is off.
+    if (isGovCloudAccountProvisioningEnabled(scope)) {
+      organizationsStatements.push(
+        new PolicyStatement({
+          actions: [
+            "organizations:ListParents",
+            "organizations:TagResource",
+          ],
+          resources: [accountArn],
+        }),
+        new PolicyStatement({
+          // Invite targets an account that is not yet in the org and creates a
+          // handshake; these are not resource-scopable to a known ARN.
+          actions: ["organizations:InviteAccountToOrganization"],
+          resources: ["*"],
+        }),
+      );
+    }
+
     orgMgtRole.attachInlinePolicy(
       new Policy(scope, "OrganizationsPolicy", {
-        statements: [
-          new PolicyStatement({
-            actions: [
-              "organizations:ListOrganizationalUnitsForParent",
-              "organizations:ListAccountsForParent",
-            ],
-            resources: [
-              sandboxOu.attrArn,
-              availableOu.attrArn,
-              activeOu.attrArn,
-              cleanUpOu.attrArn,
-              quarantineOu.attrArn,
-              entryOu.attrArn,
-              exitOu.attrArn,
-              frozenOu.attrArn,
-            ],
-          }),
-          new PolicyStatement({
-            actions: ["organizations:MoveAccount"],
-            resources: [
-              availableOu.attrArn,
-              activeOu.attrArn,
-              cleanUpOu.attrArn,
-              quarantineOu.attrArn,
-              entryOu.attrArn,
-              exitOu.attrArn,
-              frozenOu.attrArn,
-              Stack.of(scope).formatArn({
-                service: "organizations",
-                region: "",
-                resource: "account",
-                arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-                resourceName: `${organizationId}/*`,
-              }),
-              Stack.of(scope).formatArn({
-                service: "organizations",
-                region: "",
-                resource: "root",
-                arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-                resourceName: `${organizationId}/*`,
-              }),
-            ],
-          }),
-          new PolicyStatement({
-            actions: ["organizations:DescribeAccount"],
-            resources: [
-              Stack.of(scope).formatArn({
-                service: "organizations",
-                region: "",
-                resource: "account",
-                arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-                resourceName: `${organizationId}/*`,
-              }),
-            ],
-          }),
-        ],
+        statements: organizationsStatements,
       }),
     );
     orgMgtRole.attachInlinePolicy(

@@ -59,9 +59,35 @@ function response(
 }
 
 function isValidDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(value);
-  return !isNaN(date.getTime());
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  // Reject rollover dates like 2026-02-30 (which the Date constructor would
+  // silently normalize to early March).
+  return (
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() === m - 1 &&
+    date.getUTCDate() === d
+  );
+}
+
+// Optional defense-in-depth: if set, only these commercial linked-account ids
+// (comma-separated) may be queried, so a compromised client certificate cannot
+// enumerate cost for arbitrary accounts in the org. Unset → any account in the
+// org may be queried (single-tenant trust boundary).
+const allowedLinkedAccounts = (process.env.ALLOWED_LINKED_ACCOUNT_IDS ?? "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+
+function isAccountAllowed(accountId: string): boolean {
+  return (
+    allowedLinkedAccounts.length === 0 ||
+    allowedLinkedAccounts.includes(accountId)
+  );
 }
 
 function parseRequest(
@@ -90,8 +116,10 @@ function parseRequest(
   if (!endDate || !isValidDate(endDate)) {
     return { error: "endDate is required and must be YYYY-MM-DD" };
   }
-  if (new Date(startDate) > new Date(endDate)) {
-    return { error: "startDate must be before endDate" };
+  // Cost Explorer's TimePeriod.End is exclusive, so start must be strictly
+  // before end; equal dates would fail at the API with an opaque 500.
+  if (new Date(startDate) >= new Date(endDate)) {
+    return { error: "startDate must be strictly before endDate" };
   }
 
   return {
@@ -167,6 +195,15 @@ export const handler = async (
         }
         commercialAccountId = resolved;
       }
+    }
+
+    // Enforce the optional per-account allowlist against the *resolved*
+    // commercial account that Cost Explorer will actually be queried on.
+    if (!isAccountAllowed(commercialAccountId)) {
+      return response(403, {
+        error: "Account not permitted",
+        message: `Cost queries are not permitted for account ${commercialAccountId}.`,
+      });
     }
 
     const filters: GetCostAndUsageCommandInput["Filter"][] = [

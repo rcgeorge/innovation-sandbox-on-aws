@@ -149,12 +149,18 @@ export class CommercialBridgeCostStack extends cdk.Stack {
           memorySize: 256,
         },
       );
-      // Assume OrganizationAccountAccessRole in linked/GovCloud accounts only.
+      // Assume OrganizationAccountAccessRole in linked (commercial) and paired
+      // GovCloud accounts. Account ids are created dynamically so must stay
+      // wildcarded, but scope to the two real partitions and the single role
+      // name rather than `arn:*` any-partition.
       acceptInvitationLambda.addToRolePolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
           actions: ["sts:AssumeRole"],
-          resources: ["arn:*:iam::*:role/OrganizationAccountAccessRole"],
+          resources: [
+            "arn:aws:iam::*:role/OrganizationAccountAccessRole",
+            "arn:aws-us-gov:iam::*:role/OrganizationAccountAccessRole",
+          ],
         }),
       );
 
