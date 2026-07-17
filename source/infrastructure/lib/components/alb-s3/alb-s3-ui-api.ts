@@ -156,6 +156,23 @@ export class AlbS3UiApi extends Construct {
       "ELB_DELETION_PROTECTION_ENABLED",
     ]);
 
+    // The ALB's target groups are IP-type (interface-endpoint ENIs), which CDK
+    // cannot associate with a security group, so it does NOT add any egress from
+    // the ALB to the targets — the ALB SG defaults to deny-all-outbound. Without
+    // this, the ALB cannot reach the endpoints for health checks OR real
+    // traffic (targets time out → permanently unhealthy → 503). Explicitly allow
+    // the ALB to reach both interface endpoints on 443.
+    this.loadBalancer.connections.allowTo(
+      s3Endpoint,
+      ec2.Port.tcp(443),
+      "ALB → S3 interface endpoint (health checks + traffic)",
+    );
+    this.loadBalancer.connections.allowTo(
+      executeApiEndpoint,
+      ec2.Port.tcp(443),
+      "ALB → execute-api interface endpoint (health checks + traffic)",
+    );
+
     // ─── Target Groups (IP type — populated by ENI-sync Lambda) ─────────────
 
     const s3TargetGroup = new ApplicationTargetGroup(this, "S3TargetGroup", {
