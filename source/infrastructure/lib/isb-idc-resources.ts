@@ -220,7 +220,7 @@ export class IsbIdcResources {
       resourceArns: [ssmParamIdcConfiguration.parameterArn],
       allowExternalPrincipals: false,
       permissionArns: [
-        "arn:aws:ram::aws:permission/AWSRAMDefaultPermissionSSMParameterReadOnly",
+        `arn:${Stack.of(scope).partition}:ram::aws:permission/AWSRAMDefaultPermissionSSMParameterReadOnly`,
       ],
     });
   }

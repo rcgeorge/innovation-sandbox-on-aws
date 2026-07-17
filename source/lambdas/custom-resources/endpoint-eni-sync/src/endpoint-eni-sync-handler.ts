@@ -68,11 +68,12 @@ function parseMappings(raw: string): EndpointMapping[] {
 async function getEndpointIps(endpointId: string): Promise<string[]> {
   const response = await ec2.send(
     new DescribeNetworkInterfacesCommand({
+      // NOTE: do NOT add a `vpc-id: ["*"]` filter. EC2 filter values treat "*"
+      // as a literal for `vpc-id` (it is not a wildcard there), so in some
+      // partitions/regions (observed in GovCloud) it matches nothing and the
+      // whole query returns empty. The interface-type + description filters
+      // already uniquely scope to this endpoint's ENIs.
       Filters: [
-        {
-          Name: "vpc-id",
-          Values: ["*"], // scope is implicit via endpoint
-        },
         {
           Name: "interface-type",
           Values: ["vpc_endpoint"],

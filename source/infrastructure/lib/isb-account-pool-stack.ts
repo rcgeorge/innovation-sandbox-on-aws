@@ -39,10 +39,14 @@ export class IsbAccountPoolStack extends Stack {
         label: "ISB Managed Regions",
         description:
           "Provide list of AWS Regions to limit the use to specific regions.",
+        // Accept one or more mid segments before the trailing digit so GovCloud
+        // (us-gov-east-1) and other multi-segment region codes validate, not
+        // just single-segment commercial codes (us-east-1). Commercial regions
+        // still match. Partition-portable, backward-compatible.
         allowedPattern:
-          "^[a-z]{2}(-[a-z]+-\\d{1})(,[ ]*[a-z]{2}(-[a-z]+-\\d{1}))*$",
+          "^[a-z]{2}(-[a-z]+)+-\\d{1}(,[ ]*[a-z]{2}(-[a-z]+)+-\\d{1})*$",
         constraintDescription:
-          "Must be a comma-separated list of valid AWS Region codes, e.g., us-east-1,eu-west-1",
+          "Must be a comma-separated list of valid AWS Region codes, e.g., us-east-1,eu-west-1,us-gov-east-1",
       },
     );
 

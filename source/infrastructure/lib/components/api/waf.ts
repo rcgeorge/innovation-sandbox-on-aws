@@ -27,6 +27,7 @@ import { Construct } from "constructs";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
+import { isGovCloud } from "@amzn/innovation-sandbox-infrastructure/helpers/govcloud-mode";
 import { ServicePrincipal } from "aws-cdk-lib/aws-iam";
 
 export interface WafProps {
@@ -48,6 +49,14 @@ export interface WafProps {
    *   caller spoof an allow-listed IP via a forged `X-Forwarded-For` header.
    */
   useSourceIp?: boolean;
+  /**
+   * Optional suffix to disambiguate the WAF log-group name. Required when more
+   * than one Waf exists in the same stack (e.g. alb-s3 mode has both an ALB WAF
+   * and the private API Gateway WAF), since the log-group name is fixed and
+   * would otherwise collide. Commercial (single WAF) omits it, keeping the
+   * original name.
+   */
+  logGroupSuffix?: string;
 }
 
 export class Waf extends Construct {
@@ -79,14 +88,20 @@ export class Waf extends Construct {
           },
         };
 
+    // GovCloud WAFv2 does not support the custom rate-limit evaluation window
+    // (it rejects any request containing EvaluationWindowSec with
+    // "fields that belong to a feature you are not allowed to use"). Omit it
+    // there so the rule uses the default 300s window; commercial keeps 60s.
+    const rateWindow = isGovCloud(scope) ? {} : { evaluationWindowSec: 60 };
+
     const rateBasedStatement = useSourceIp
       ? {
-          evaluationWindowSec: 60,
+          ...rateWindow,
           limit: 200,
           aggregateKeyType: "IP",
         }
       : {
-          evaluationWindowSec: 60,
+          ...rateWindow,
           limit: 200,
           aggregateKeyType: "FORWARDED_IP",
           forwardedIpConfig: {
@@ -219,7 +234,9 @@ export class Waf extends Construct {
     });
 
     this.wafLogGroup = new LogGroup(this, "WafLogGroup", {
-      logGroupName: `aws-waf-logs-isb-${props.namespace}-blocked-requests`,
+      logGroupName: `aws-waf-logs-isb-${props.namespace}${
+        props.logGroupSuffix ? `-${props.logGroupSuffix}` : ""
+      }-blocked-requests`,
       encryptionKey: props.kmsKey,
       removalPolicy: isDevMode(scope)
         ? RemovalPolicy.DESTROY

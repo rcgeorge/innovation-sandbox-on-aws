@@ -34,7 +34,6 @@ import {
   ComparisonOperator,
   TreatMissingData,
 } from "aws-cdk-lib/aws-cloudwatch";
-import { Trigger } from "aws-cdk-lib/triggers";
 // LogGroup/RetentionDays available if needed for future WAF logging
 
 import {
@@ -98,6 +97,10 @@ export class AlbS3UiApi extends Construct {
       removalPolicy: isDevMode(scope)
         ? RemovalPolicy.DESTROY
         : RemovalPolicy.RETAIN,
+      // Versioned + DESTROY (dev) means a stack delete/rollback cannot remove
+      // the bucket unless its object versions are emptied first, otherwise the
+      // stack ends up in ROLLBACK_FAILED. autoDeleteObjects handles that in dev.
+      autoDeleteObjects: isDevMode(scope),
       encryption: BucketEncryption.S3_MANAGED, // interface endpoint → no KMS
       objectOwnership: ObjectOwnership.OBJECT_WRITER,
       publicReadAccess: false,
@@ -231,33 +234,34 @@ export class AlbS3UiApi extends Construct {
         resources: ["*"],
       }),
     );
+    // RegisterTargets/DeregisterTargets support resource-level scoping to the
+    // target groups.
     eniSyncLambda.lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         actions: [
           "elasticloadbalancing:RegisterTargets",
           "elasticloadbalancing:DeregisterTargets",
-          "elasticloadbalancing:DescribeTargetHealth",
         ],
         resources: [s3TargetGroup.targetGroupArn, apiTargetGroup.targetGroupArn],
       }),
     );
+    // DescribeTargetHealth (like ELBv2 Describe* actions generally) does NOT
+    // support resource-level permissions and must be granted on "*", otherwise
+    // IAM reports "no identity-based policy allows the action".
+    eniSyncLambda.lambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["elasticloadbalancing:DescribeTargetHealth"],
+        resources: ["*"],
+      }),
+    );
 
-    // Populate the target groups once at deploy time so the ALB has healthy
-    // targets immediately instead of blackholing (503) until the first
-    // scheduled run. The Trigger invokes the sync after the target groups and
-    // the interface endpoints (whose ENIs it reads) exist. A failure here fails
-    // the deploy, which is correct — the data path cannot serve without targets.
-    const deployTimeSync = new Trigger(this, "EniSyncOnDeploy", {
-      handler: eniSyncLambda.lambdaFunction,
-      executeAfter: [
-        s3TargetGroup,
-        apiTargetGroup,
-        s3Endpoint,
-        executeApiEndpoint,
-      ],
-      executeOnHandlerChange: true,
-    });
-    deployTimeSync.node.addDependency(eniSyncLambda.lambdaFunction);
+    // NOTE: a deploy-time Trigger to pre-populate the target groups was
+    // intentionally removed. At stack-create the interface-endpoint ENIs are not
+    // reliably ready, so a synchronous deploy-time sync is racy and, if made
+    // fatal, fails the entire Compute deploy. The scheduled sync below is the
+    // authoritative mechanism; the only cost is that the ALB may return 503 for
+    // up to the poll interval immediately after a fresh deploy, until the first
+    // scheduled run registers the endpoint ENIs.
 
     // Correct drift on a schedule. There is no native EventBridge event for
     // interface-endpoint ENI IP changes (AZ recovery / scaling), so a short
@@ -428,6 +432,9 @@ export class AlbS3UiApi extends Construct {
       // X-Forwarded-For), so key the allow-list and rate limit off the
       // connection source IP.
       useSourceIp: true,
+      // Distinct log-group name so it doesn't collide with the private API
+      // Gateway WAF's log group (both live in the Compute stack in alb-s3 mode).
+      logGroupSuffix: "alb",
     });
 
     // ─── Outputs ────────────────────────────────────────────────────────────

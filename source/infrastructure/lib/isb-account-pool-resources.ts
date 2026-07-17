@@ -348,11 +348,20 @@ export class IsbAccountPoolResources {
       resourceArns: [ssmParamAccountPoolConfiguration.parameterArn],
       allowExternalPrincipals: false,
       permissionArns: [
-        "arn:aws:ram::aws:permission/AWSRAMDefaultPermissionSSMParameterReadOnly",
+        `arn:${Stack.of(scope).partition}:ram::aws:permission/AWSRAMDefaultPermissionSSMParameterReadOnly`,
       ],
     });
     const outdir = App.of(scope)!.outdir;
-    const sandboxAccountStackApp = new App({ outdir });
+    // The sandbox-account template is synthesized in a separate child App, which
+    // does NOT inherit the parent app's CLI context — so propagate isGovCloud
+    // explicitly. GovCloud CloudFormation rejects the AWS::CDK::Metadata
+    // resource, so analytics reporting must be disabled on this stack too (this
+    // template is deployed into every sandbox account via the StackSet).
+    const govCloud = isGovCloud(scope);
+    const sandboxAccountStackApp = new App({
+      outdir,
+      context: { isGovCloud: govCloud },
+    });
     const context = getSolutionContext(sandboxAccountStackApp.node);
     const sandboxAccountStack = new IsbSandboxAccountStack(
       sandboxAccountStackApp,
@@ -360,6 +369,7 @@ export class IsbAccountPoolResources {
       {
         description: `(${context.solutionId}-SandboxAccount) ${context.solutionName} ${context.version}`,
         synthesizer: props.synthesizer,
+        analyticsReporting: govCloud ? false : undefined,
       },
     );
     sandboxAccountStackApp.synth();
